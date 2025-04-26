@@ -86,3 +86,45 @@ async def audio_node(state: AICompanionState, config: RunnableConfig):
       )
       output_audio = await text_to_speech_module.synthesize(response)
       return {"messages": response, "audio_buffer": output_audio}
+
+async def summarize_conversation_node(state: AICompanionState):
+    model = get_chat_model()
+    summary = state.get("summary", "")
+
+    if summary:
+        summary_message = (
+            f"This is summary of the conversation to date between Ava and the user: {summary}\n\n"
+            "Extend the summary by taking into account the new messages above:"
+        )
+    else:
+        summary_message = (
+            "Create a summary of the conversation above between Ava and the user. "
+            "The summary must be a short description of the conversation so far, "
+            "but that captures all the relevant information shared between Ava and the user:"
+        )
+    messages = state["messages"] + [HumanMessage(content=summary_message)] 
+    response = await model.ainvoke(messages) 
+
+    delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-5]]
+    return {"summary": response.content, "messages": delete_messages} 
+
+async def memory_extraction_node(state: AICompanionState): 
+    """Extract and store important information from the last message. """ 
+    if not state["messages"]:
+        return {} 
+    memory_manager = get_memory_manager()
+    await memory_manager.extract_and_store_memories(state["messages"][-1])
+    return {} 
+
+def memory_injection_node(state: AICompanionState):
+    """Retrieve and inject relevant memories into the character card."""
+    memory_manager = get_memory_manager()
+
+    # Get relevant memories based on recent conversation
+    recent_context = " ".join([m.content for m in state["messages"][-3:]])
+    memories = memory_manager.get_relevant_memories(recent_context)
+
+    # Format memories for the character card
+    memory_context = memory_manager.format_memories_for_prompt(memories)
+
+    return {"memory_context": memory_context}
