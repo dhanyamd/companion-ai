@@ -127,4 +127,4 @@ def memory_injection_node(state: AICompanionState):
     # Format memories for the character card
     memory_context = memory_manager.format_memories_for_prompt(memories)
 
-    return {"memory_context": memory_context}
+    return {"memory_context": memory_context} 

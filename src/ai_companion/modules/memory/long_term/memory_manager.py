@@ -59,7 +59,7 @@ class MemoryManager:
                     "timestamp": datetime.now().isoformat(),
                 },
             )
-    def get_relevant_memorie(self, context: str) -> List[str]: 
+    def get_relevant_memories(self, context: str) -> List[str]: 
         """Retreive relevant memories based on the current context. """
         memories = self.vector_store.search_memories(context, k=settings.MEMORY_TOP_K)
         if memories:
@@ -72,7 +72,7 @@ class MemoryManager:
         if not memories:
             return ""
         return "\n".join(f"- {memory}" for memory in memories)
-
+    
 
 def get_memory_manager() -> MemoryManager:
     """Get a MemoryManager instance."""
