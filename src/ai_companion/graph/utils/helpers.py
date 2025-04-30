@@ -3,9 +3,9 @@ import re
 from langchain_core.output_parsers import StrOutputParser
 from langchain_groq import ChatGroq
 
-from ai_companion.modules.image.image_to_text import ImageToText
-from ai_companion.modules.image.text_to_image import TextToImage
-from ai_companion.speech import TextToSpeech
+from ai_companion.modules.images.image_to_text import ImageToText
+from ai_companion.modules.images.text_to_image import TextToImage
+from ai_companion.speech.text_to_speech import TextToSpeech
 from settings import settings
 
 
