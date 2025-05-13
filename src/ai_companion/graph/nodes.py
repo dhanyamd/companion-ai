@@ -3,12 +3,12 @@ from uuid import uuid4
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableConfig
 
-from graph.state import AICompanionState
-from graph.utils.chains import (
+from ai_companion.graph.state import AICompanionState
+from ai_companion.graph.utils.chains import (
     get_character_response_chain,
     get_router_chain,
 )
-from graph.utils.helpers import (
+from ai_companion.graph.utils.helpers import (
     get_chat_model,
     get_text_to_image_module,
     get_text_to_speech_module,

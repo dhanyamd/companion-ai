@@ -1,10 +1,10 @@
 from functools import lru_cache 
 from langgraph.graph import START, END, StateGraph 
-from graph.edges import (
+from ai_companion.graph.edges import (
     select_workflow,
     should_summarize_conversation,
 )
-from graph.nodes import (
+from ai_companion.graph.nodes import (
     audio_node,
     context_injection_node,
     conversation_node,
@@ -14,7 +14,7 @@ from graph.nodes import (
     router_node,
     summarize_conversation_node,
 )
-from graph.state import AICompanionState 
+from ai_companion.graph.state import AICompanionState 
 
 @lru_cache(maxsize=1) 
 def create_workflow_graph(): 
@@ -53,4 +53,4 @@ def create_workflow_graph():
 
 
 # Compiled without a checkpointer. Used for LangGraph Studio
-graph = create_workflow_graph().compile()
+graph = create_workflow_graph().compile();

@@ -9,9 +9,11 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from ai_companion.graph import graph_builder
-from ai_companion.modules.images.image_to_text import ImageToText
-from ai_companion.speech import SpeechToText, TextToSpeech
+from ai_companion.modules.images import ImageToText
+from ai_companion.speech.speech_to_text import SpeechToText
+from ai_companion.speech.text_to_speech import TextToSpeech
 from settings import settings
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -19,29 +21,36 @@ logger = logging.getLogger(__name__)
 speech_to_text = SpeechToText()
 text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
+load_dotenv()
+# Router for WhatsApp respo
+whatsapp_router = APIRouter()
 
-whatsapp_router = APIRouter() 
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN") 
+# WhatsApp API credentials
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
+
 @whatsapp_router.api_route("/whatsapp_response", methods=["GET", "POST"])
-async def whatsapp_handler(request: Request) -> Response: 
-    """Handles incoming messages and status updates from the Whatsapp Cloud API"""
+async def whatsapp_handler(request: Request) -> Response:
+    """Handles incoming messages and status updates from the WhatsApp Cloud API."""
+
     if request.method == "GET":
         params = request.query_params
         if params.get("hub.verify_token") == os.getenv("WHATSAPP_VERIFY_TOKEN"):
             return Response(content=params.get("hub.challenge"), status_code=200)
         return Response(content="Verification token mismatch", status_code=403)
-    try: 
-        data = await request.json() 
-        change_value = data["entry"][0]["changes"][0]["value"] 
-        if "messages" in change_value: 
-            message = change_value["messages"][0] 
-            from_number = message["from"] 
-            session_id = from_number 
-            
-            content = "" 
-            if message["type"] == "audio": 
+
+    try:
+        data = await request.json()
+        change_value = data["entry"][0]["changes"][0]["value"]
+        if "messages" in change_value:
+            message = change_value["messages"][0]
+            from_number = message["from"]
+            session_id = from_number
+
+            # Get user message and handle different message types
+            content = ""
+            if message["type"] == "audio":
                 content = await process_audio_message(message)
             elif message["type"] == "image":
                 # Get image caption if any
@@ -59,7 +68,7 @@ async def whatsapp_handler(request: Request) -> Response:
             else:
                 content = message["text"]["body"]
 
-             # Process message through the graph agent
+            # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH) as short_term_memory:
                 graph = graph_builder.compile(checkpointer=short_term_memory)
                 await graph.ainvoke(
@@ -71,9 +80,9 @@ async def whatsapp_handler(request: Request) -> Response:
                 output_state = await graph.aget_state(config={"configurable": {"thread_id": session_id}})
 
             workflow = output_state.values.get("workflow", "conversation")
-            response_message = output_state.values["messages"][-1].content 
+            response_message = output_state.values["messages"][-1].content
 
-             # Handle different response types based on workflow
+            # Handle different response types based on workflow
             if workflow == "audio":
                 audio_buffer = output_state.values["audio_buffer"]
                 success = await send_response(from_number, response_message, "audio", audio_buffer)
@@ -100,6 +109,7 @@ async def whatsapp_handler(request: Request) -> Response:
         logger.error(f"Error processing message: {e}", exc_info=True)
         return Response(content="Internal server error", status_code=500)
 
+
 async def download_media(media_id: str) -> bytes:
     """Download media from WhatsApp."""
     media_metadata_url = f"https://graph.facebook.com/v21.0/{media_id}"
@@ -114,7 +124,8 @@ async def download_media(media_id: str) -> bytes:
         media_response = await client.get(download_url, headers=headers)
         media_response.raise_for_status()
         return media_response.content
-    
+
+
 async def process_audio_message(message: Dict) -> str:
     """Download and transcribe audio message."""
     audio_id = message["audio"]["id"]
@@ -138,6 +149,7 @@ async def process_audio_message(message: Dict) -> str:
     audio_data = audio_buffer.read()
 
     return await speech_to_text.transcribe(audio_data)
+
 
 async def send_response(
     from_number: str,

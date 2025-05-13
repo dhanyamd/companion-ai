@@ -1,4 +1,4 @@
-from langgraph import END 
+from langgraph.graph import END 
 from typing_extensions import Literal 
 from ai_companion.graph.state import AICompanionState
 from settings import settings 
