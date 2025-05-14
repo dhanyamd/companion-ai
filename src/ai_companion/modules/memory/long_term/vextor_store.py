@@ -56,7 +56,7 @@ class VectorStore:
     
     def _collection_exists(self) -> bool: 
         """Check if the memory collection exists."""
-        collections = self.client.get_collection().collections 
+        collections = self.client.get_collections().collections
         return any(col.name == self.COLLECTION_NAME for col in collections)  
     
     def _create_collection(self) -> None: 
