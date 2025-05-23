@@ -36,12 +36,14 @@ whatsapp_router = APIRouter()
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
+# Cloud environment detection
+IS_CLOUD = os.getenv("RUNNING_IN_CLOUD", "0").lower() in ("1", "true", "yes")
+print(f"Cloud environment detected: {IS_CLOUD} (RUNNING_IN_CLOUD={os.getenv('RUNNING_IN_CLOUD')})")
+
 # Ensure this function is defined before you use it
 def sanitize_string(input_string: str) -> str:
     """Remove non-printable characters from a string, including carriage returns and newlines."""
     return re.sub(r'[^\x20-\x7E]', '', input_string)  # Keep only printable ASCII characters
-
-IS_CLOUD = os.getenv("RUNNING_IN_CLOUD", "0") == "1"
 
 async def safe_http_get(url, *args, **kwargs):
     try:
@@ -51,8 +53,11 @@ async def safe_http_get(url, *args, **kwargs):
     except Exception as e:
         if IS_CLOUD:
             print(f"[CLOUD] Ignored error for URL {repr(url)}: {e}")
+            print(f"[CLOUD] Error details: {traceback.format_exc()}")
             return None
         else:
+            print(f"[LOCAL] Error for URL {repr(url)}: {e}")
+            print(f"[LOCAL] Error details: {traceback.format_exc()}")
             raise
 
 async def safe_http_post(url, *args, **kwargs):
@@ -368,13 +373,18 @@ async def upload_media(media_content: BytesIO, mime_type: str) -> str:
 def clean_url(url: str) -> str:
     """Clean the URL by removing unwanted characters and properly encoding it."""
     try:
+        # Log the raw URL with all characters visible
+        print(f"Raw URL (hex): {url.encode('unicode_escape').decode()}")
+        
         # First remove any non-printable characters and trim whitespace
         # This includes \r, \n, \t and other control characters
         cleaned_url = ''.join(char for char in url if char.isprintable() or char.isspace()).strip()
         
-        # Log the URL before and after cleaning
-        print(f"Original URL: {repr(url)}")
-        print(f"After removing non-printable chars: {repr(cleaned_url)}")
+        # Remove any remaining control characters
+        cleaned_url = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned_url)
+        
+        # Log the URL after initial cleaning
+        print(f"After initial cleaning (hex): {cleaned_url.encode('unicode_escape').decode()}")
         
         # Parse the URL to handle encoding properly
         from urllib.parse import urlparse, urlunparse, quote
@@ -396,10 +406,14 @@ def clean_url(url: str) -> str:
             parsed.fragment
         ))
         
-        print(f"Final cleaned URL: {repr(cleaned_url)}")
+        # Final check for any remaining non-printable characters
+        cleaned_url = ''.join(char for char in cleaned_url if char.isprintable() or char.isspace()).strip()
+        
+        print(f"Final cleaned URL (hex): {cleaned_url.encode('unicode_escape').decode()}")
         return cleaned_url
     except Exception as e:
         print(f"Error cleaning URL: {e}")
+        print(f"Error details: {traceback.format_exc()}")
         # Return a safe fallback - just the basic cleaning
         return ''.join(char for char in url if char.isprintable() or char.isspace()).strip()
 
