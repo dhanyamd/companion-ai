@@ -53,4 +53,4 @@ def create_workflow_graph():
 
 
 # Compiled without a checkpointer. Used for LangGraph Studio
-graph = create_workflow_graph().compile();
+graph = create_workflow_graph().compile()

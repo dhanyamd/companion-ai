@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     ELEVENLABS_VOICE_ID: str
     TOGETHER_API_KEY: str
 
-    QDRANT_API_KEY: str | None
-    QDRANT_URL: str
+    QDRANT_API_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.tuHnaYj0AK3vtgxil-dMaYp8Df-ZDi8nMUuLep_Fz7I"
+    QDRANT_URL: str="https://6905f4b7-7d13-42c5-ab18-b4b99584e067.eu-central-1-0.aws.cloud.qdrant.io"
     QDRANT_PORT: str = "6333"
     QDRANT_HOST: str | None = None
 

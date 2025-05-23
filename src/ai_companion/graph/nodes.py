@@ -124,7 +124,19 @@ def memory_injection_node(state: AICompanionState):
     recent_context = " ".join([m.content for m in state["messages"][-3:]])
     memories = memory_manager.get_relevant_memories(recent_context)
 
-    # Format memories for the character card
+    # Format memories for the character card and sanitize any URLs
     memory_context = memory_manager.format_memories_for_prompt(memories)
+    
+    # Sanitize any URLs in the memory context
+    if memory_context:
+        from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
+        import re
+        
+        # Find all URLs in the memory context
+        urls = re.findall(r'(https?://[^\s]+)', memory_context)
+        for url in urls:
+            # Replace each URL with its cleaned version
+            cleaned_url = clean_url(url)
+            memory_context = memory_context.replace(url, cleaned_url)
 
     return {"memory_context": memory_context} 
