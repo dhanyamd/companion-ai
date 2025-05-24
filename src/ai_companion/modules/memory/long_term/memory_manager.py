@@ -2,6 +2,7 @@ import logging
 import uuid
 from datetime import datetime
 from typing import List, Optional
+import os
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
 from ai_companion.modules.memory.long_term.vextor_store import get_vector_store
@@ -41,8 +42,13 @@ class MemoryManager:
         if message.type != "human":
             return 
         
+        content = message.content
+        # Sanitize the message content to remove problematic characters if not in cloud
+        if not os.getenv("RUNNING_IN_CLOUD", "0").lower() in ("1", "true", "yes"):
+            content = ''.join(char for char in content if char.isprintable() or char.isspace()).strip()
+
         #analyze the message for importance and formatting 
-        analysis = await self._analyze_memory(message.content)
+        analysis = await self._analyze_memory(content)
         if analysis.is_important and analysis.formatted_memory: 
             #check if similar memory exists 
             similar = self.vector_store.find_similar_memory(analysis.formatted_memory) 
