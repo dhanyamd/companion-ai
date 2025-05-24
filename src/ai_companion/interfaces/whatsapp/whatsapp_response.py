@@ -52,30 +52,22 @@ thread_pool = ThreadPoolExecutor(max_workers=10)
 def safe_http_get(url, *args, **kwargs):
     """Synchronous HTTP GET request that handles errors gracefully."""
     try:
-        # Clean the URL before making the request
-        if IS_CLOUD:
+        if not IS_CLOUD:
             url = clean_url(url)
-            
         response = requests.get(url, *args, **kwargs)
         response.raise_for_status()
         return response.content
     except Exception as e:
         if IS_CLOUD:
             print(f"[CLOUD] Ignored error for URL {repr(url)}: {e}")
-            print(f"[CLOUD] Error details: {traceback.format_exc()}")
             return None
-        else:
-            print(f"[LOCAL] Error for URL {repr(url)}: {e}")
-            print(f"[LOCAL] Error details: {traceback.format_exc()}")
-            raise
+        raise
 
 def safe_http_post(url, *args, **kwargs):
     """Synchronous HTTP POST request that handles errors gracefully."""
     try:
-        # Clean the URL before making the request
-        if IS_CLOUD:
+        if not IS_CLOUD:
             url = clean_url(url)
-            
         response = requests.post(url, *args, **kwargs)
         response.raise_for_status()
         try:
@@ -85,12 +77,8 @@ def safe_http_post(url, *args, **kwargs):
     except Exception as e:
         if IS_CLOUD:
             print(f"[CLOUD] Ignored error for URL {repr(url)}: {e}")
-            print(f"[CLOUD] Error details: {traceback.format_exc()}")
             return None
-        else:
-            print(f"[LOCAL] Error for URL {repr(url)}: {e}")
-            print(f"[LOCAL] Error details: {traceback.format_exc()}")
-            raise
+        raise
 
 async def async_safe_http_get(url, *args, **kwargs):
     """Async wrapper for safe_http_get."""
@@ -106,16 +94,14 @@ async def async_safe_http_post(url, *args, **kwargs):
 
 def clean_url(url: str) -> str:
     """Clean the URL by removing unwanted characters and properly encoding it."""
+    if IS_CLOUD:
+        return url  # Skip cleaning in cloud environment
     try:
         # First remove any non-printable characters and trim whitespace
-        # This includes \r, \n, \t and other control characters
         cleaned_url = ''.join(char for char in url if char.isprintable() or char.isspace()).strip()
         
         # Remove any remaining control characters
         cleaned_url = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned_url)
-        
-        # Log the URL after initial cleaning
-        print(f"After initial cleaning (hex): {cleaned_url.encode('unicode_escape').decode()}")
         
         # Parse the URL to handle encoding properly
         from urllib.parse import urlparse, urlunparse, quote
@@ -137,16 +123,10 @@ def clean_url(url: str) -> str:
             parsed.fragment
         ))
         
-        # Final check for any remaining non-printable characters
-        cleaned_url = ''.join(char for char in cleaned_url if char.isprintable() or char.isspace()).strip()
-        
-        print(f"Final cleaned URL (hex): {cleaned_url.encode('unicode_escape').decode()}")
         return cleaned_url
     except Exception as e:
         print(f"Error cleaning URL: {e}")
-        print(f"Error details: {traceback.format_exc()}")
-        # Return a safe fallback - just the basic cleaning
-        return ''.join(char for char in url if char.isprintable() or char.isspace()).strip()
+        return url  # Return original URL if cleaning fails
 
 class URLValidator:
     regex = re.compile(
