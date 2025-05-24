@@ -216,6 +216,12 @@ async def whatsapp_handler_post(request: Request):
                 print("Message content is empty, cannot invoke graph.")
                 return Response(content="Empty message content", status_code=400)
 
+            # Sanitize the message content before invoking the graph
+            sanitized_message = ''.join(char for char in message_dict["content"] if char.isprintable() or char.isspace()).strip()
+
+            # Update the message_dict with the sanitized content
+            message_dict["content"] = sanitized_message
+
             # Process message through the graph agent
             try:
                 print(f"Attempting to connect to database at: {settings.SHORT_TERM_MEMORY_DB_PATH}")
