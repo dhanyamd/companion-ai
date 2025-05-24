@@ -66,19 +66,23 @@ def safe_http_get(url, *args, **kwargs):
 def safe_http_post(url, *args, **kwargs):
     """Synchronous HTTP POST request that handles errors gracefully."""
     try:
+        # Sanitize the URL before making the request
         if not IS_CLOUD:
             url = clean_url(url)
+
         response = requests.post(url, *args, **kwargs)
         response.raise_for_status()
         try:
             return response.json()
         except Exception:
             return response.text
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         if IS_CLOUD:
-            print(f"[CLOUD] Ignored error for URL {repr(url)}: {e}")
-            return None
-        raise
+            logger.error(f"[CLOUD] Error for URL {repr(url)}: {e}")
+            return {"error": "Request failed", "details": str(e)}  # Return a default response
+        else:
+            logger.error(f"[LOCAL] Error for URL {repr(url)}: {e}")
+            raise  # Raise the error in local environments
 
 async def async_safe_http_get(url, *args, **kwargs):
     """Async wrapper for safe_http_get."""
@@ -217,9 +221,7 @@ async def whatsapp_handler_post(request: Request):
                 return Response(content="Empty message content", status_code=400)
 
             # Sanitize the message content before invoking the graph
-            sanitized_message = ''.join(char for char in message_dict["content"] if char.isprintable() or char.isspace()).strip()
-
-            # Update the message_dict with the sanitized content
+            sanitized_message = sanitize_string(message_dict["content"])
             message_dict["content"] = sanitized_message
 
             # Process message through the graph agent
