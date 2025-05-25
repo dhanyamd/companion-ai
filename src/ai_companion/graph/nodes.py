@@ -2,7 +2,7 @@ import os
 from uuid import uuid4 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableConfig
-
+import re
 from ai_companion.graph.state import AICompanionState
 from ai_companion.graph.utils.chains import (
     get_character_response_chain,
@@ -15,6 +15,7 @@ from ai_companion.graph.utils.helpers import (
 )
 from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager
 from ai_companion.modules.schedules.context_generation import ScheduleContextGenerator
+from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
 from settings import settings
 
 async def router_node(state: AICompanionState):
@@ -116,25 +117,46 @@ async def memory_extraction_node(state: AICompanionState):
     await memory_manager.extract_and_store_memories(state["messages"][-1])
     return {} 
 
-def memory_injection_node(state: AICompanionState):
+def memory_injection_node(state: AICompanionState) -> AICompanionState:
     """Retrieve and inject relevant memories into the character card."""
-    memory_manager = get_memory_manager()
-
-    # Get relevant memories based on recent conversation
-    recent_context = " ".join([m.content for m in state["messages"][-3:]])
-    memories = memory_manager.get_relevant_memories(recent_context)
-
-    # Format memories for the character card
-    memory_context = memory_manager.format_memories_for_prompt(memories)
-    
-    # In cloud environment, we don't need to sanitize URLs
-    if not os.getenv("RUNNING_IN_CLOUD", "0").lower() in ("1", "true", "yes"):
-        import re
-        # Find all URLs in the memory context
-        urls = re.findall(r'(https?://[^\s]+)', memory_context)
-        for url in urls:
-            # Remove any non-printable characters from URLs
-            cleaned_url = ''.join(char for char in url if char.isprintable() or char.isspace()).strip()
-            memory_context = memory_context.replace(url, cleaned_url)
-
-    return {"memory_context": memory_context} 
+    try:
+        # Get recent context from last 3 messages
+        recent_context = "\n".join([
+            f"{msg.role}: {msg.content}"
+            for msg in state.messages[-3:]
+        ])
+        
+        # Get relevant memories
+        memories = get_memory_manager().get_relevant_memories(recent_context)
+        
+        # Clean any URLs in the memory context
+        if memories:
+            # Use regex to find URLs and clean them
+            url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
+            cleaned_memories = []
+            for memory in memories:
+                # Clean the memory content
+                content = memory.content
+                # Find and clean any URLs
+                urls = re.findall(url_pattern, content)
+                for url in urls:
+                    cleaned_url = clean_url(url)
+                    content = content.replace(url, cleaned_url)
+                # Clean any remaining non-printable characters
+                content = ''.join(char for char in content if char.isprintable() and char not in '\r\n\t')
+                memory.content = content
+                cleaned_memories.append(memory)
+            memories = cleaned_memories
+        
+        # Update memory context
+        state.memory_context = "\n".join([
+            f"Memory: {memory.content}"
+            for memory in memories
+        ]) if memories else ""
+        
+        return state
+    except Exception as e:
+        print(f"Error in memory injection: {e}")
+        # Return empty memory context on error
+        state.memory_context = ""
+        return state 

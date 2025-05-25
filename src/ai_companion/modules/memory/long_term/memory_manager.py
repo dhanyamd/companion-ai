@@ -3,9 +3,11 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 import os
+import re
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
 from ai_companion.modules.memory.long_term.vextor_store import get_vector_store
+from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
 from settings import settings
 from langchain_core.messages import BaseMessage
 from langchain_groq import ChatGroq
@@ -43,9 +45,14 @@ class MemoryManager:
             return 
         
         content = message.content
-        # Sanitize the message content to remove problematic characters if not in cloud
-        if not os.getenv("RUNNING_IN_CLOUD", "0").lower() in ("1", "true", "yes"):
-            content = ''.join(char for char in content if char.isprintable() or char.isspace()).strip()
+        # Always sanitize the message content to remove problematic characters
+        content = ''.join(char for char in content if char.isprintable() and char not in '\r\n\t').strip()
+        
+        # Find and clean any URLs in the content
+        urls = re.findall(r'(https?://[^\s]+)', content)
+        for url in urls:
+            cleaned_url = clean_url(url)
+            content = content.replace(url, cleaned_url)
 
         #analyze the message for importance and formatting 
         analysis = await self._analyze_memory(content)

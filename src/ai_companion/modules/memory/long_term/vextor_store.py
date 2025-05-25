@@ -8,6 +8,7 @@ from settings import settings
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer 
+from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
 
 @dataclass 
 class Memory: 
@@ -42,11 +43,21 @@ class VectorStore:
         return cls._instance 
     
     def __init__(self) -> None:
-        if not self._initialized: 
-            self._validate_env_vars() 
-            self.model = SentenceTransformer(self.EMBEDDING_MODEL) 
-            self.client = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
-            self._initialized =  True
+        """Initialize the vector store with Qdrant client."""
+        # Check if all required environment variables are set
+        for var in self.REQUIRED_ENV_VARS:
+            if not getattr(settings, var, None):
+                raise ValueError(f"Missing required environment variable: {var}")
+
+        # Clean the Qdrant URL before initializing the client
+        clean_url = clean_url(settings.QDRANT_URL)
+        
+        try:
+            self.client = QdrantClient(url=clean_url, api_key=settings.QDRANT_API_KEY)
+        except Exception as e:
+            print(f"Error initializing Qdrant client with URL: {repr(clean_url)}")
+            print(f"Error details: {str(e)}")
+            raise
     
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
