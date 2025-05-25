@@ -50,7 +50,11 @@ def sanitize_string(input_string: str) -> str:
     cleaned = ''.join(char for char in input_string if char.isprintable() and char not in '\r\n\t')
     # Then remove any remaining control characters
     cleaned = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned)
-    return cleaned.strip()
+    # Remove any trailing/leading whitespace
+    cleaned = cleaned.strip()
+    # Remove any multiple spaces
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned
 
 # Thread pool for making synchronous requests in async context
 thread_pool = ThreadPoolExecutor(max_workers=10)
@@ -123,13 +127,27 @@ def clean_url(url: str) -> str:
             # If httpx validation fails, try one more aggressive cleaning
             cleaned_url = re.sub(r'[^\x20-\x7E]', '', cleaned_url)
             cleaned_url = quote(cleaned_url, safe=':/?=&')
+            # Try one more time with httpx
+            try:
+                URL(cleaned_url)
+            except Exception as e:
+                print(f"Second httpx validation failed: {e}")
+                # If still failing, try one last time with minimal cleaning
+                cleaned_url = re.sub(r'[^\x20-\x7E]', '', url)
+                cleaned_url = quote(cleaned_url, safe=':/?=&')
         
         print(f"Final cleaned URL: {repr(cleaned_url)}")
         return cleaned_url
     except Exception as e:
         print(f"Error cleaning URL: {e}")
         print(f"Problematic URL: {repr(url)}")
-        return url  # Return original URL if cleaning fails
+        # Try one last time with minimal cleaning
+        try:
+            cleaned_url = re.sub(r'[^\x20-\x7E]', '', url)
+            cleaned_url = quote(cleaned_url, safe=':/?=&')
+            return cleaned_url
+        except:
+            return url  # Return original URL if all cleaning attempts fail
 
 async def async_safe_http_get(url, *args, **kwargs):
     """Async wrapper for safe_http_get with enhanced URL cleaning."""
@@ -160,9 +178,14 @@ class URLValidator:
 
     @classmethod
     def is_valid(cls, url: str) -> bool:
-        if IS_CLOUD:
-            return True  # Always valid in cloud
-        return bool(cls.regex.match(url))
+        try:
+            # Always try to clean the URL first
+            cleaned_url = clean_url(url)
+            # Then validate it
+            return bool(cls.regex.match(cleaned_url))
+        except Exception as e:
+            print(f"URL validation error: {e}")
+            return False
 
 @whatsapp_router.get("/whatsapp_response")
 async def whatsapp_webhook_get(request: Request):
@@ -214,12 +237,17 @@ async def whatsapp_handler_post(request: Request):
 
             # Process message through the graph agent
             try:
-                graph = graph_builder.compile()
+                # Create a checkpointer for state persistence
+                checkpointer = AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH)
+                
+                # Compile the graph with the checkpointer
+                graph = graph_builder.compile(checkpointer=checkpointer)
+                
                 # Initialize state with required fields
                 initial_state = {
                     "messages": [message_dict],
                     "summary": "",
-                    "workflow": "conversation",  # Default workflow
+                    "workflow": "conversation",
                     "audio_buffer": b"",
                     "image_path": "",
                     "current_activity": "",
@@ -227,27 +255,33 @@ async def whatsapp_handler_post(request: Request):
                     "memory_context": ""
                 }
                 
-                # Sanitize the entire state
-                initial_state = sanitize_state(initial_state)
-                
                 # Add configurable options for the graph
                 config = {
                     "configurable": {
                         "thread_id": session_id,
-                        "recursion_limit": 10,  # Limit recursion depth
-                        "timeout": 30  # Add timeout in seconds
+                        "recursion_limit": 10,
+                        "timeout": 30
                     },
-                    "callbacks": None,  # Disable callbacks in cloud environment
-                    "tags": ["cloud_run"],  # Add tags for tracking
+                    "callbacks": None,
+                    "tags": ["cloud_run"],
                     "metadata": {
                         "session_id": session_id,
                         "environment": "cloud_run"
                     }
                 }
                 
-                # Log the state and config before invocation
-                logger.info(f"Initial state: {initial_state}")
-                logger.info(f"Config: {config}")
+                # Try to get existing state first
+                try:
+                    existing_state = await checkpointer.get({"configurable": {"thread_id": session_id}})
+                    if existing_state:
+                        # Merge existing state with new message
+                        initial_state["messages"] = existing_state["messages"] + [message_dict]
+                        initial_state["summary"] = existing_state.get("summary", "")
+                        initial_state["workflow"] = existing_state.get("workflow", "conversation")
+                        initial_state["current_activity"] = existing_state.get("current_activity", "")
+                        initial_state["memory_context"] = existing_state.get("memory_context", "")
+                except Exception as e:
+                    logger.warning(f"Could not load existing state: {e}")
                 
                 try:
                     # First try with minimal configuration
@@ -259,10 +293,6 @@ async def whatsapp_handler_post(request: Request):
                     result = await graph.ainvoke(initial_state, config)
                     logger.info("Graph invocation completed with full config")
                 
-                # Log the result
-                logger.info(f"Graph result: {result}")
-                
-                # Check if we got a valid response
                 if result and isinstance(result, dict):
                     print("Graph invocation completed successfully.")
                     return Response(content="Message processed successfully", status_code=200)
@@ -272,7 +302,6 @@ async def whatsapp_handler_post(request: Request):
                     
             except Exception as e:
                 logger.error(f"Error invoking graph: {str(e)}", exc_info=True)
-                # Try to get more detailed error information
                 error_details = {
                     "error": str(e),
                     "traceback": traceback.format_exc(),

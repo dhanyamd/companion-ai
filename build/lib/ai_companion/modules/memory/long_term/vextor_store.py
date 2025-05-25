@@ -44,8 +44,9 @@ class VectorStore:
     def __init__(self) -> None:
         if not self._initialized: 
             self._validate_env_vars() 
+            clean_url = settings.QDRANT_URL.strip().replace('\r', '').replace('\n', '')
             self.model = SentenceTransformer(self.EMBEDDING_MODEL) 
-            self.client = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
+            self.client = QdrantClient(url=clean_url, api_key=settings.QDRANT_API_KEY)
             self._initialized =  True
     
     def _validate_env_vars(self) -> None:
