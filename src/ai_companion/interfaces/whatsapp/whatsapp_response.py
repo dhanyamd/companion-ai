@@ -52,37 +52,22 @@ thread_pool = ThreadPoolExecutor(max_workers=10)
 def safe_http_get(url, *args, **kwargs):
     """Synchronous HTTP GET request that handles errors gracefully."""
     try:
-        if not IS_CLOUD:
-            url = clean_url(url)
         response = requests.get(url, *args, **kwargs)
         response.raise_for_status()
         return response.content
-    except Exception as e:
-        if IS_CLOUD:
-            print(f"[CLOUD] Ignored error for URL {repr(url)}: {e}")
-            return None
-        raise
+    except requests.exceptions.RequestException as e:
+        print(f"Error for URL {repr(url)}: {e}")
+        return None
 
 def safe_http_post(url, *args, **kwargs):
     """Synchronous HTTP POST request that handles errors gracefully."""
     try:
-        # Sanitize the URL before making the request
-        if not IS_CLOUD:
-            url = clean_url(url)
-
         response = requests.post(url, *args, **kwargs)
         response.raise_for_status()
-        try:
-            return response.json()
-        except Exception:
-            return response.text
+        return response.json()  # or response.text if you expect text
     except requests.exceptions.RequestException as e:
-        if IS_CLOUD:
-            logger.error(f"[CLOUD] Error for URL {repr(url)}: {e}")
-            return {"error": "Request failed", "details": str(e)}  # Return a default response
-        else:
-            logger.error(f"[LOCAL] Error for URL {repr(url)}: {e}")
-            raise  # Raise the error in local environments
+        print(f"Error for URL {repr(url)}: {e}")
+        return None
 
 async def async_safe_http_get(url, *args, **kwargs):
     """Async wrapper for safe_http_get."""
@@ -101,8 +86,10 @@ def clean_url(url: str) -> str:
     if IS_CLOUD:
         return url  # Skip cleaning in cloud environment
     try:
-        # First remove any non-printable characters and trim whitespace
-        cleaned_url = ''.join(char for char in url if char.isprintable() or char.isspace()).strip()
+        print(f"Original URL: {url}")  # Log the original URL
+        # Remove non-printable characters and trim whitespace
+        cleaned_url = ''.join(char for char in url if char.isprintable()).strip()
+        print(f"Cleaned URL: {cleaned_url}")  # Log the cleaned URL
         
         # Remove any remaining control characters
         cleaned_url = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned_url)
@@ -166,11 +153,9 @@ async def whatsapp_webhook_get(request: Request):
 
 @whatsapp_router.post("/whatsapp_response")
 async def whatsapp_handler_post(request: Request):
-    # Handle POST requests for incoming messages
     try:
-        # Only attempt to parse JSON for POST requests
         data = await request.json()
-        print(f"Incoming data: {data}")  # Log the entire incoming data
+        print(f"Incoming data: {data}")
 
         change_value = data.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
         
@@ -179,134 +164,43 @@ async def whatsapp_handler_post(request: Request):
             from_number = message.get("from", "")
             session_id = from_number
 
-            # Handle different message types
             if message["type"] == "text":
                 content = message.get("text", {}).get("body", "")
-                print(f"Raw text content: {content}")
-
-                # Sanitize the text content (do NOT use clean_url here)
                 sanitized_content = sanitize_string(content)
 
-                # Validate URLs in the text content
+                # Validate URLs
                 urls = re.findall(r'(https?://[^\s]+)', sanitized_content)
                 for url in urls:
-                    if not URLValidator.is_valid(url):
-                        print(f"Invalid URL found in text: {url}.")
+                    cleaned_url = clean_url(url)  # Clean the URL
+                    if not URLValidator.is_valid(cleaned_url):
+                        print(f"Invalid URL found: {cleaned_url}.")
                         return Response(content="Invalid URL in text message", status_code=400)
 
-                print(f"Sanitized text content: {sanitized_content}")
+                # Log the sanitized content and URLs
+                print(f"Sanitized content: {sanitized_content}")
+                print(f"Valid URLs: {urls}")
 
-            elif message["type"] == "audio":
-                content = await process_audio_message(message)
-            elif message["type"] == "image":
-                if "image" in message:
-                    image_id = message["image"].get("id", "")
-                    if not image_id:
-                        print("Image ID is missing.")
-                        return Response(content="Image ID is missing", status_code=400)
-                    image_bytes = await download_media(image_id)
-                    # Process image...
-                else:
-                    print("No image data found.")
-                    return Response(content="No image data found", status_code=400)
-            else:
-                print("Unknown message type.")
-                return Response(content="Unknown message type", status_code=400)
-
-            # Convert the message to the expected dictionary format
+            # Convert message to dict
             message_dict = convert_message_to_dict(HumanMessage(content=sanitized_content))
 
-            if not message_dict["content"]:
-                print("Message content is empty, cannot invoke graph.")
-                return Response(content="Empty message content", status_code=400)
-
-            # Sanitize the message content before invoking the graph
-            sanitized_message = sanitize_string(message_dict["content"])
-            message_dict["content"] = sanitized_message
+            # Sanitize the message content
+            message_dict["content"] = sanitize_string(message_dict["content"])
 
             # Process message through the graph agent
             try:
-                print(f"Attempting to connect to database at: {settings.SHORT_TERM_MEMORY_DB_PATH}")
-                async with AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH) as short_term_memory:
-                    print("Database connection established.")
-                    graph = graph_builder.compile(checkpointer=short_term_memory)
-
-                    # Ensure the graph is properly initialized
-                    if not graph:
-                        print("Graph is not properly initialized. Attempting to reinitialize.")
-                        graph = graph_builder.compile(checkpointer=short_term_memory)  # Reinitialize the graph
-
-                    if not graph:
-                        print("Failed to initialize the graph.")
-                        return Response(content="Graph is not properly initialized", status_code=500)
-
-                    print("Graph compiled with checkpointer.")
-
-                    # Sanitize URLs in the graph state if applicable
-                    if hasattr(graph, 'state'):
-                        for key, value in graph.state.items():
-                            if isinstance(value, str) and URLValidator.is_valid(value):
-                                sanitized_value = clean_url(value)
-                                graph.state[key] = sanitized_value
-                                print(f"Sanitized graph state value for {key}: {sanitized_value}")
-
-                    try:
-                        print(f"Invoking graph with content: {message_dict}")
-                        await graph.ainvoke(
-                            {"messages": [message_dict]},
-                            {"configurable": {"thread_id": session_id}},
-                        )
-                        print("Graph invocation completed.")
-
-                        # Get the workflow type and response from the state
-                        output_state = await graph.aget_state(config={"configurable": {"thread_id": session_id}});
-                        print("Retrieved output state from database.")
-
-                        workflow = output_state.values.get("workflow", "conversation")
-                        response_message = output_state.values["messages"][-1].content
-                        print(response_message)
-
-                        # Handle different response types based on workflow
-                        if workflow == "audio":
-                            audio_buffer = output_state.values["audio_buffer"]
-                            success = await send_response(from_number, response_message, "audio", audio_buffer)
-                        elif workflow == "image":
-                            image_path = output_state.values["image_path"]
-                            with open(image_path, "rb") as f:
-                                image_data = f.read()
-                            success = await send_response(from_number, response_message, "image", image_data)
-                        else:
-                            success = await send_response(from_number, response_message, "text")
-
-                        if not success:
-                            return Response(content="Failed to send message", status_code=500)
-
-                        return Response(content="Message processed", status_code=200)
-                    except Exception as invoke_error:
-                        print(f"Error invoking graph: {invoke_error}")
-                        print("Input to graph:", message_dict)
-                        print("Session ID:", session_id)
-                        print("Traceback:", traceback.format_exc())
-                        return Response(content=f"Error invoking graph: {str(invoke_error)}", status_code=500)
-
-                print("Exited database connection context.")
-
-            except Exception as db_error:
-                print(f"Database error: {db_error}")
-                return Response(content=f"Database error: {str(db_error)}", status_code=500)
-
-        elif "statuses" in change_value:
-            return Response(content="Status update received", status_code=200)
-
-        else:
-            return Response(content="No messages found", status_code=400)
+                graph = graph_builder.compile()
+                await graph.ainvoke(
+                    {"messages": [message_dict]},
+                    {"configurable": {"thread_id": session_id}},
+                )
+                print("Graph invocation completed.")
+            except Exception as e:
+                logger.error(f"Error invoking graph: {e}", exc_info=True)
+                return Response(content="Error invoking graph", status_code=500)
 
     except Exception as e:
-        print(f"Error processing message: {e}")
-        # Log the full traceback for debugging internal server errors
-        traceback_str = traceback.format_exc()
-        print("Full Traceback:", traceback_str)
-        return Response(content=f"Internal server error: {str(e)}", status_code=500)
+        logger.error(f"Error processing message: {e}", exc_info=True)
+        return Response(content="Internal server error", status_code=500)
 
 def convert_message_to_dict(message: HumanMessage) -> Dict[str, Any]:
     """Convert a HumanMessage to a dictionary format."""
