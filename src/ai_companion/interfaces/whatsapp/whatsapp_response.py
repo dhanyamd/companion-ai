@@ -130,12 +130,6 @@ async def whatsapp_handler_post(request: Request):
 
             # Process message through the graph agent
             try:
-                # Create a checkpointer for state persistence
-                checkpointer = AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH)
-                
-                # Compile the graph with the checkpointer
-                graph = graph_builder.compile(checkpointer=checkpointer)
-                
                 # Initialize state with required fields
                 initial_state = {
                     "messages": [message_dict],
@@ -162,32 +156,33 @@ async def whatsapp_handler_post(request: Request):
                         "environment": "cloud_run"
                     }
                 }
+
+                # Create checkpointer and compile graph
+                checkpointer = AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH)
+                graph = graph_builder.compile(checkpointer=checkpointer)
                 
                 # Try to get existing state first
                 try:
-                    async with checkpointer as cp:
-                        existing_state = await cp.get({"configurable": {"thread_id": session_id}})
-                        if existing_state:
-                            # Merge existing state with new message
-                            initial_state["messages"] = existing_state["messages"] + [message_dict]
-                            initial_state["summary"] = existing_state.get("summary", "")
-                            initial_state["workflow"] = existing_state.get("workflow", "conversation")
-                            initial_state["current_activity"] = existing_state.get("current_activity", "")
-                            initial_state["memory_context"] = existing_state.get("memory_context", "")
+                    existing_state = await checkpointer.get({"configurable": {"thread_id": session_id}})
+                    if existing_state:
+                        # Merge existing state with new message
+                        initial_state["messages"] = existing_state["messages"] + [message_dict]
+                        initial_state["summary"] = existing_state.get("summary", "")
+                        initial_state["workflow"] = existing_state.get("workflow", "conversation")
+                        initial_state["current_activity"] = existing_state.get("current_activity", "")
+                        initial_state["memory_context"] = existing_state.get("memory_context", "")
                 except Exception as e:
                     logger.warning(f"Could not load existing state: {e}")
                 
                 try:
                     # First try with minimal configuration
-                    async with checkpointer as cp:
-                        result = await graph.ainvoke(initial_state)
-                        logger.info("Graph invocation completed with minimal config")
+                    result = await graph.ainvoke(initial_state)
+                    logger.info("Graph invocation completed with minimal config")
                 except Exception as inner_e:
                     logger.warning(f"Minimal config failed: {str(inner_e)}")
                     # If minimal config fails, try with full configuration
-                    async with checkpointer as cp:
-                        result = await graph.ainvoke(initial_state, config)
-                        logger.info("Graph invocation completed with full config")
+                    result = await graph.ainvoke(initial_state, config)
+                    logger.info("Graph invocation completed with full config")
                 
                 if result and isinstance(result, dict):
                     print("Graph invocation completed successfully.")
