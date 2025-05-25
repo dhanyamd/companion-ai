@@ -226,19 +226,49 @@ async def whatsapp_handler_post(request: Request):
                         "thread_id": session_id,
                         "recursion_limit": 10,  # Limit recursion depth
                         "timeout": 30  # Add timeout in seconds
+                    },
+                    "callbacks": None,  # Disable callbacks in cloud environment
+                    "tags": ["cloud_run"],  # Add tags for tracking
+                    "metadata": {
+                        "session_id": session_id,
+                        "environment": "cloud_run"
                     }
                 }
                 
-                result = await graph.ainvoke(initial_state, config)
-                print("Graph invocation completed successfully.")
-                return Response(content="Message processed successfully", status_code=200)
+                # Log the state and config before invocation
+                logger.info(f"Initial state: {initial_state}")
+                logger.info(f"Config: {config}")
+                
+                try:
+                    # First try with minimal configuration
+                    result = await graph.ainvoke(initial_state)
+                    logger.info("Graph invocation completed with minimal config")
+                except Exception as inner_e:
+                    logger.warning(f"Minimal config failed: {str(inner_e)}")
+                    # If minimal config fails, try with full configuration
+                    result = await graph.ainvoke(initial_state, config)
+                    logger.info("Graph invocation completed with full config")
+                
+                # Log the result
+                logger.info(f"Graph result: {result}")
+                
+                # Check if we got a valid response
+                if result and isinstance(result, dict):
+                    print("Graph invocation completed successfully.")
+                    return Response(content="Message processed successfully", status_code=200)
+                else:
+                    logger.error("Graph returned invalid result")
+                    return Response(content="Invalid graph result", status_code=500)
+                    
             except Exception as e:
                 logger.error(f"Error invoking graph: {str(e)}", exc_info=True)
                 # Try to get more detailed error information
                 error_details = {
                     "error": str(e),
                     "traceback": traceback.format_exc(),
-                    "message_content": sanitized_content
+                    "message_content": sanitized_content,
+                    "state": initial_state,
+                    "config": config
                 }
                 logger.error(f"Detailed error information: {error_details}")
                 return Response(content="Error processing message", status_code=500)
