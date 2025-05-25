@@ -44,7 +44,13 @@ print(f"Cloud environment detected: {IS_CLOUD} (RUNNING_IN_CLOUD={os.getenv('RUN
 
 def sanitize_string(input_string: str) -> str:
     """Remove non-printable characters from a string, including carriage returns and newlines."""
-    return re.sub(r'[^\x20-\x7E]', '', input_string)  # Keep only printable ASCII characters
+    if not isinstance(input_string, str):
+        return str(input_string)
+    # First remove all non-printable characters including \r, \n, \t
+    cleaned = ''.join(char for char in input_string if char.isprintable() and char not in '\r\n\t')
+    # Then remove any remaining control characters
+    cleaned = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned)
+    return cleaned.strip()
 
 # Thread pool for making synchronous requests in async context
 thread_pool = ThreadPoolExecutor(max_workers=10)
@@ -71,24 +77,23 @@ def safe_http_post(url, *args, **kwargs):
 
 def clean_url(url: str) -> str:
     """Clean the URL by removing unwanted characters and properly encoding it."""
-    if IS_CLOUD:
-        return url  # Skip cleaning in cloud environment
+    if not isinstance(url, str):
+        url = str(url)
+    
+    # Always clean URLs, even in cloud environment
     try:
-        print(f"Original URL: {repr(url)}")  # Use repr to see all characters
+        print(f"Original URL: {repr(url)}")
         
-        # First remove all non-printable characters including \r, \n, \t
-        cleaned_url = ''.join(char for char in url if char.isprintable() and char not in '\r\n\t')
-        print(f"After removing non-printable: {repr(cleaned_url)}")
-        
-        # Remove any remaining control characters
-        cleaned_url = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned_url)
-        print(f"After removing control chars: {repr(cleaned_url)}")
+        # First sanitize the string
+        cleaned_url = sanitize_string(url)
+        print(f"After sanitize_string: {repr(cleaned_url)}")
         
         # Parse the URL to handle encoding properly
         from urllib.parse import urlparse, urlunparse, quote, unquote
         
         # First unquote to handle any existing encoding
         cleaned_url = unquote(cleaned_url)
+        print(f"After unquote: {repr(cleaned_url)}")
         
         # Split the URL into components
         parsed = urlparse(cleaned_url)
@@ -106,6 +111,8 @@ def clean_url(url: str) -> str:
             encoded_query,
             parsed.fragment
         ))
+        
+        print(f"After URL parsing: {repr(cleaned_url)}")
         
         # Final validation to ensure URL is compatible with httpx
         try:
@@ -219,6 +226,9 @@ async def whatsapp_handler_post(request: Request):
                     "apply_activity": False,
                     "memory_context": ""
                 }
+                
+                # Sanitize the entire state
+                initial_state = sanitize_state(initial_state)
                 
                 # Add configurable options for the graph
                 config = {
@@ -401,5 +411,19 @@ async def upload_media(media_content: BytesIO, mime_type: str) -> str:
         print("[CLOUD] Failed to upload media or get ID.")
         return ""
     return result["id"]
+
+def sanitize_state(state: dict) -> dict:
+    """Sanitize all string values in the state dictionary."""
+    sanitized = {}
+    for key, value in state.items():
+        if isinstance(value, str):
+            sanitized[key] = sanitize_string(value)
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_state(value)
+        elif isinstance(value, list):
+            sanitized[key] = [sanitize_state(item) if isinstance(item, dict) else sanitize_string(item) if isinstance(item, str) else item for item in value]
+        else:
+            sanitized[key] = value
+    return sanitized
 
 model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
