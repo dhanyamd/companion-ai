@@ -204,11 +204,13 @@ async def whatsapp_handler_post(request: Request):
 
 def convert_message_to_dict(message: HumanMessage) -> Dict[str, Any]:
     """Convert a HumanMessage to a dictionary format."""
-    return {
+    result = {
         "content": message.content,
         "type": "human",  # Change this to "human" or the appropriate type
         # Add any other necessary fields here
     }
+    print(f"Converted message dict: {result}")  # Log the result
+    return result
 
 async def download_media(media_id: str) -> bytes:
     sanitized_media_id = clean_url(sanitize_string(media_id))
