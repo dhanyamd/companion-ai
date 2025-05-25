@@ -7,7 +7,7 @@ import re
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
 from ai_companion.modules.memory.long_term.vextor_store import get_vector_store
-from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
+from ai_companion.core.utils import clean_url
 from settings import settings
 from langchain_core.messages import BaseMessage
 from langchain_groq import ChatGroq

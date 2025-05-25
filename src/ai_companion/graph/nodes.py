@@ -15,7 +15,7 @@ from ai_companion.graph.utils.helpers import (
 )
 from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager
 from ai_companion.modules.schedules.context_generation import ScheduleContextGenerator
-from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
+from ai_companion.core.utils import clean_url
 from settings import settings
 
 async def router_node(state: AICompanionState):

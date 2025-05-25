@@ -8,7 +8,7 @@ from settings import settings
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer 
-from ai_companion.interfaces.whatsapp.whatsapp_response import clean_url
+from ai_companion.core.utils import clean_url
 
 @dataclass 
 class Memory: 
