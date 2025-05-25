@@ -69,33 +69,26 @@ def safe_http_post(url, *args, **kwargs):
         print(f"Error for URL {repr(url)}: {e}")
         return None
 
-async def async_safe_http_get(url, *args, **kwargs):
-    """Async wrapper for safe_http_get."""
-    return await asyncio.get_event_loop().run_in_executor(
-        thread_pool, lambda: safe_http_get(url, *args, **kwargs)
-    )
-
-async def async_safe_http_post(url, *args, **kwargs):
-    """Async wrapper for safe_http_post."""
-    return await asyncio.get_event_loop().run_in_executor(
-        thread_pool, lambda: safe_http_post(url, *args, **kwargs)
-    )
-
 def clean_url(url: str) -> str:
     """Clean the URL by removing unwanted characters and properly encoding it."""
     if IS_CLOUD:
         return url  # Skip cleaning in cloud environment
     try:
-        print(f"Original URL: {url}")  # Log the original URL
-        # Remove non-printable characters and trim whitespace
-        cleaned_url = ''.join(char for char in url if char.isprintable()).strip()
-        print(f"Cleaned URL: {cleaned_url}")  # Log the cleaned URL
+        print(f"Original URL: {repr(url)}")  # Use repr to see all characters
+        
+        # First remove all non-printable characters including \r, \n, \t
+        cleaned_url = ''.join(char for char in url if char.isprintable() and char not in '\r\n\t')
+        print(f"After removing non-printable: {repr(cleaned_url)}")
         
         # Remove any remaining control characters
         cleaned_url = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', cleaned_url)
+        print(f"After removing control chars: {repr(cleaned_url)}")
         
         # Parse the URL to handle encoding properly
-        from urllib.parse import urlparse, urlunparse, quote
+        from urllib.parse import urlparse, urlunparse, quote, unquote
+        
+        # First unquote to handle any existing encoding
+        cleaned_url = unquote(cleaned_url)
         
         # Split the URL into components
         parsed = urlparse(cleaned_url)
@@ -114,10 +107,36 @@ def clean_url(url: str) -> str:
             parsed.fragment
         ))
         
+        # Final validation to ensure URL is compatible with httpx
+        try:
+            from httpx import URL
+            URL(cleaned_url)  # This will raise InvalidURL if there are still issues
+        except Exception as e:
+            print(f"httpx URL validation failed: {e}")
+            # If httpx validation fails, try one more aggressive cleaning
+            cleaned_url = re.sub(r'[^\x20-\x7E]', '', cleaned_url)
+            cleaned_url = quote(cleaned_url, safe=':/?=&')
+        
+        print(f"Final cleaned URL: {repr(cleaned_url)}")
         return cleaned_url
     except Exception as e:
         print(f"Error cleaning URL: {e}")
+        print(f"Problematic URL: {repr(url)}")
         return url  # Return original URL if cleaning fails
+
+async def async_safe_http_get(url, *args, **kwargs):
+    """Async wrapper for safe_http_get with enhanced URL cleaning."""
+    cleaned_url = clean_url(url)
+    return await asyncio.get_event_loop().run_in_executor(
+        thread_pool, lambda: safe_http_get(cleaned_url, *args, **kwargs)
+    )
+
+async def async_safe_http_post(url, *args, **kwargs):
+    """Async wrapper for safe_http_post with enhanced URL cleaning."""
+    cleaned_url = clean_url(url)
+    return await asyncio.get_event_loop().run_in_executor(
+        thread_pool, lambda: safe_http_post(cleaned_url, *args, **kwargs)
+    )
 
 class URLValidator:
     regex = re.compile(
@@ -189,14 +208,40 @@ async def whatsapp_handler_post(request: Request):
             # Process message through the graph agent
             try:
                 graph = graph_builder.compile()
-                await graph.ainvoke(
-                    {"messages": [message_dict]},
-                    {"configurable": {"thread_id": session_id}},
-                )
-                print("Graph invocation completed.")
+                # Initialize state with required fields
+                initial_state = {
+                    "messages": [message_dict],
+                    "summary": "",
+                    "workflow": "conversation",  # Default workflow
+                    "audio_buffer": b"",
+                    "image_path": "",
+                    "current_activity": "",
+                    "apply_activity": False,
+                    "memory_context": ""
+                }
+                
+                # Add configurable options for the graph
+                config = {
+                    "configurable": {
+                        "thread_id": session_id,
+                        "recursion_limit": 10,  # Limit recursion depth
+                        "timeout": 30  # Add timeout in seconds
+                    }
+                }
+                
+                result = await graph.ainvoke(initial_state, config)
+                print("Graph invocation completed successfully.")
+                return Response(content="Message processed successfully", status_code=200)
             except Exception as e:
-                logger.error(f"Error invoking graph: {e}", exc_info=True)
-                return Response(content="Error invoking graph", status_code=500)
+                logger.error(f"Error invoking graph: {str(e)}", exc_info=True)
+                # Try to get more detailed error information
+                error_details = {
+                    "error": str(e),
+                    "traceback": traceback.format_exc(),
+                    "message_content": sanitized_content
+                }
+                logger.error(f"Detailed error information: {error_details}")
+                return Response(content="Error processing message", status_code=500)
 
     except Exception as e:
         logger.error(f"Error processing message: {e}", exc_info=True)
