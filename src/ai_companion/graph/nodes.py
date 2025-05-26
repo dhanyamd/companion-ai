@@ -123,7 +123,7 @@ def memory_injection_node(state: AICompanionState) -> AICompanionState:
         # Get recent context from last 3 messages
         recent_context = "\n".join([
             f"{msg.role}: {msg.content}"
-            for msg in state.messages[-3:]
+            for msg in state["messages"][-3:]
         ])
         
         # Get relevant memories
@@ -149,14 +149,13 @@ def memory_injection_node(state: AICompanionState) -> AICompanionState:
             memories = cleaned_memories
         
         # Update memory context
-        state.memory_context = "\n".join([
+        memory_context = "\n".join([
             f"Memory: {memory.content}"
             for memory in memories
         ]) if memories else ""
         
-        return state
+        return {"memory_context": memory_context}
     except Exception as e:
         print(f"Error in memory injection: {e}")
         # Return empty memory context on error
-        state.memory_context = ""
-        return state 
+        return {"memory_context": ""} 
