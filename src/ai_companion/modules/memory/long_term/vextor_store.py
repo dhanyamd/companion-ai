@@ -4,14 +4,30 @@ from datetime import datetime
 from functools import lru_cache
 from typing import List, Optional
 import logging
+import re
+from pathlib import Path
 
 from settings import settings
 from qdrant_client import QdrantClient
+from qdrant_client.http import models
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer 
 from ai_companion.core.utils import clean_url
 
 logger = logging.getLogger(__name__)
+
+# Define model paths
+MODEL_CACHE_DIR = Path("models")
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
+
+def clean_api_key(key: str) -> str:
+    """Clean API key by removing all non-alphanumeric characters except for dots."""
+    # Remove all whitespace and newlines
+    key = ''.join(key.split())
+    # Remove any non-alphanumeric characters except dots
+    key = re.sub(r'[^a-zA-Z0-9.]', '', key)
+    return key
 
 @dataclass 
 class Memory: 
@@ -33,7 +49,7 @@ class VectorStore:
     """A class to handle vector storage operations using Qdrant. """
     
     REQUIRED_ENV_VARS = ["QDRANT_URL", "QDRANT_API_KEY"]
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL = EMBEDDING_MODEL
     COLLECTION_NAME = "long_term_memory"
     SIMILARITY_THRESHOLD = 0.9 
 
@@ -52,21 +68,23 @@ class VectorStore:
 
         try:
             # Initialize the embedding model first
-            self.model = SentenceTransformer(self.EMBEDDING_MODEL)
+            self._initialize_model()
             
             # Clean and validate configuration
             cleaned_url = clean_url(settings.QDRANT_URL)
-            # Remove all whitespace and newlines from API key
-            cleaned_api_key = ''.join(settings.QDRANT_API_KEY.split())
+            cleaned_api_key = clean_api_key(settings.QDRANT_API_KEY)
             
             if not cleaned_url or not cleaned_api_key:
                 raise ValueError("Qdrant URL and API key must not be empty")
+            
+            logger.info(f"Initializing Qdrant client with URL: {cleaned_url}")
             
             # Initialize Qdrant client with cleaned values
             self.client = QdrantClient(
                 url=cleaned_url,
                 api_key=cleaned_api_key,
-                timeout=10.0  # Add timeout to prevent hanging
+                timeout=10.0,  # Add timeout to prevent hanging
+                prefer_grpc=False  # Use HTTP instead of gRPC
             )
             
             # Verify connection
@@ -83,6 +101,42 @@ class VectorStore:
             logger.error(f"Failed to initialize vector store: {str(e)}")
             raise
     
+    def _initialize_model(self) -> None:
+        """Initialize the sentence transformer model with fallback options."""
+        try:
+            # Create model cache directory if it doesn't exist
+            MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Try to load from local cache first
+            if EMBEDDING_MODEL_PATH.exists():
+                logger.info(f"Loading model from local cache: {EMBEDDING_MODEL_PATH}")
+                self.model = SentenceTransformer(str(EMBEDDING_MODEL_PATH))
+            else:
+                # Try to download with increased timeout and retries
+                logger.info(f"Downloading model: {self.EMBEDDING_MODEL}")
+                self.model = SentenceTransformer(
+                    self.EMBEDDING_MODEL,
+                    cache_folder=str(MODEL_CACHE_DIR),
+                    device="cpu"  # Force CPU to avoid GPU memory issues
+                )
+                # Save the model locally
+                self.model.save(str(EMBEDDING_MODEL_PATH))
+                logger.info(f"Model saved to: {EMBEDDING_MODEL_PATH}")
+                
+        except Exception as e:
+            logger.error(f"Error initializing model: {str(e)}")
+            # Try fallback model if main model fails
+            try:
+                logger.info("Trying fallback model: paraphrase-MiniLM-L3-v2")
+                self.model = SentenceTransformer(
+                    "paraphrase-MiniLM-L3-v2",
+                    cache_folder=str(MODEL_CACHE_DIR),
+                    device="cpu"
+                )
+            except Exception as fallback_error:
+                logger.error(f"Fallback model also failed: {str(fallback_error)}")
+                raise
+
     def _collection_exists(self) -> bool: 
         """Check if the memory collection exists."""
         try:

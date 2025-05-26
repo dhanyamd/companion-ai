@@ -1,6 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, validator
+import re
 
+def clean_api_key(key: str) -> str:
+    """Clean API key by removing all non-alphanumeric characters except for dots."""
+    # Remove all whitespace and newlines
+    key = ''.join(key.split())
+    # Remove any non-alphanumeric characters except dots
+    key = re.sub(r'[^a-zA-Z0-9.]', '', key)
+    return key
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_file_encoding="utf-8")
@@ -40,12 +48,18 @@ class Settings(BaseSettings):
     # Database Path
     SHORT_TERM_MEMORY_DB_PATH: str = Field(default="/app/data/memory.db", description="Path to SQLite database")
 
-    @validator("QDRANT_API_KEY", "QDRANT_URL")
-    def clean_strings(cls, v):
-        """Clean strings of whitespace and newlines."""
+    @validator("QDRANT_API_KEY")
+    def clean_qdrant_api_key(cls, v):
+        """Clean Qdrant API key."""
         if isinstance(v, str):
-            # Remove all whitespace and newlines
-            return ''.join(v.split())
+            return clean_api_key(v)
+        return v
+
+    @validator("QDRANT_URL")
+    def clean_qdrant_url(cls, v):
+        """Clean Qdrant URL."""
+        if isinstance(v, str):
+            return v.strip().replace('\r', '').replace('\n', '')
         return v
 
 
