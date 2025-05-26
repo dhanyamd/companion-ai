@@ -122,7 +122,7 @@ def memory_injection_node(state: AICompanionState) -> AICompanionState:
     try:
         # Get recent context from last 3 messages
         recent_context = "\n".join([
-            f"{msg.role}: {msg.content}"
+            f"{msg.type}: {msg.content}"
             for msg in state["messages"][-3:]
         ])
         

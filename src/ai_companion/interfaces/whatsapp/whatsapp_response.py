@@ -33,8 +33,8 @@ os.makedirs(os.path.dirname(settings.SHORT_TERM_MEMORY_DB_PATH), exist_ok=True)
 whatsapp_router = APIRouter()
 
 # WhatsApp API credentials
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "").strip()
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
 
 # Cloud environment detection
 IS_CLOUD = os.getenv("RUNNING_IN_CLOUD", "0").lower() in ("1", "true", "yes")
@@ -116,6 +116,9 @@ async def whatsapp_handler_post(request: Request):
             workflow = output_state.values.get("workflow", "conversation")
             response_message = output_state.values["messages"][-1].content
 
+            # Clean the response message
+            response_message = sanitize_string(response_message)
+
             # Handle different response types based on workflow
             if workflow == "audio":
                 audio_buffer = output_state.values["audio_buffer"]
@@ -187,8 +190,10 @@ async def send_response(
     media_content: bytes = None,
 ) -> bool:
     """Send response to user via WhatsApp API."""
+    # Clean the token to remove any whitespace or newlines
+    clean_token = WHATSAPP_TOKEN.strip()
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Authorization": f"Bearer {clean_token}",
         "Content-Type": "application/json",
     }
 
