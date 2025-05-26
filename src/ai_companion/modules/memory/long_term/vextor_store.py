@@ -50,12 +50,12 @@ class VectorStore:
                 raise ValueError(f"Missing required environment variable: {var}")
 
         # Clean the Qdrant URL before initializing the client
-        clean_url = clean_url(settings.QDRANT_URL)
+        cleaned_url = clean_url(settings.QDRANT_URL)
         
         try:
-            self.client = QdrantClient(url=clean_url, api_key=settings.QDRANT_API_KEY)
+            self.client = QdrantClient(url=cleaned_url, api_key=settings.QDRANT_API_KEY)
         except Exception as e:
-            print(f"Error initializing Qdrant client with URL: {repr(clean_url)}")
+            print(f"Error initializing Qdrant client with URL: {repr(cleaned_url)}")
             print(f"Error details: {str(e)}")
             raise
     
