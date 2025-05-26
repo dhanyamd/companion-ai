@@ -3,11 +3,13 @@ from pydantic import Field, validator
 import re
 
 def clean_api_key(key: str) -> str:
-    """Clean API key by removing all non-alphanumeric characters except for dots."""
-    # Remove all whitespace and newlines
+    """Clean API key by removing all whitespace and special characters."""
+    if not isinstance(key, str):
+        return ""
+    # Remove all whitespace, newlines, carriage returns, and tabs
     key = ''.join(key.split())
-    # Remove any non-alphanumeric characters except dots
-    key = re.sub(r'[^a-zA-Z0-9.]', '', key)
+    # Remove any non-alphanumeric characters
+    key = re.sub(r'[^a-zA-Z0-9]', '', key)
     return key
 
 class Settings(BaseSettings):
@@ -51,16 +53,29 @@ class Settings(BaseSettings):
     @validator("QDRANT_API_KEY")
     def clean_qdrant_api_key(cls, v):
         """Clean Qdrant API key."""
-        if isinstance(v, str):
-            return clean_api_key(v)
-        return v
+        if not isinstance(v, str):
+            return ""
+        # Remove all whitespace and special characters
+        key = ''.join(v.split())
+        # Remove any non-alphanumeric characters except dots and hyphens
+        key = re.sub(r'[^a-zA-Z0-9.\-]', '', key)
+        return key
 
     @validator("QDRANT_URL")
     def clean_qdrant_url(cls, v):
         """Clean Qdrant URL."""
-        if isinstance(v, str):
-            return v.strip().replace('\r', '').replace('\n', '')
-        return v
+        if not isinstance(v, str):
+            return ""
+        # Remove any whitespace and newlines
+        url = v.strip().replace('\r', '').replace('\n', '')
+        # Ensure URL starts with http:// or https://
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        return url
 
+    @validator("TOGETHER_API_KEY")
+    def clean_together_api_key(cls, v):
+        """Clean Together API key."""
+        return clean_api_key(v)
 
 settings = Settings()

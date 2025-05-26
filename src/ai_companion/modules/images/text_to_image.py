@@ -5,7 +5,7 @@ from typing import Optional
 
 from ai_companion.core.exceptions import TextToImageError
 from ai_companion.core.prompts import IMAGE_ENHANCEMENT_PROMPT, IMAGE_SCENARIO_PROMPT
-from settings import settings
+from settings import clean_api_key, settings
 from langchain.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
@@ -46,8 +46,18 @@ class TextToImage:
     def together_client(self) -> Together: 
         """Get or create Together client instance using singleton pattern. """ 
         if self._together_client is None: 
-            self._together_client = Together(api_key=settings.TOGETHER_API_KEY)
-        return self._together_client 
+            # Clean the API key and ensure it's properly formatted
+            cleaned_api_key = clean_api_key(settings.TOGETHER_API_KEY)
+            if not cleaned_api_key:
+                raise ValueError("Invalid Together API key")
+            self._together_client = Together(api_key=cleaned_api_key)
+            # Test the connection
+            try:
+                self._together_client.Models.list()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Together client: {e}")
+                raise
+        return self._together_client
     
     async def generate_image(self, prompt: str, output_path: str = "") -> bytes: 
         """Generate an image from a prompt using Together AI""" 

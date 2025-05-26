@@ -79,16 +79,26 @@ class VectorStore:
             
             logger.info(f"Initializing Qdrant client with URL: {cleaned_url}")
             
-            # Initialize Qdrant client with cleaned values
+            # Initialize Qdrant client with cleaned values and explicit headers
             self.client = QdrantClient(
                 url=cleaned_url,
                 api_key=cleaned_api_key,
                 timeout=10.0,  # Add timeout to prevent hanging
-                prefer_grpc=False  # Use HTTP instead of gRPC
+                prefer_grpc=False,  # Use HTTP instead of gRPC
+                headers={
+                    "Authorization": f"Bearer {cleaned_api_key}",
+                    "Content-Type": "application/json"
+                },
+                check_version=False  # Skip version check to avoid warnings
             )
             
-            # Verify connection
-            self.client.get_collections()
+            # Verify connection with a simple operation
+            try:
+                collections = self.client.get_collections()
+                logger.info(f"Successfully connected to Qdrant. Found {len(collections.collections)} collections")
+            except Exception as e:
+                logger.error(f"Failed to connect to Qdrant: {str(e)}")
+                raise
             
             # Create collection if it doesn't exist
             if not self._collection_exists():
