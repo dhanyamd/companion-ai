@@ -157,8 +157,17 @@ async def whatsapp_handler_post(request: Request):
                     }
                 }
 
-                # Create checkpointer and compile graph
-                checkpointer = AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH)
+                # Create checkpointer with required configuration
+                checkpointer = AsyncSqliteSaver.from_conn_string(
+                    settings.SHORT_TERM_MEMORY_DB_PATH,
+                    config_specs=[
+                        {"id": "thread_id", "type": "str"},
+                        {"id": "recursion_limit", "type": "int"},
+                        {"id": "timeout", "type": "int"}
+                    ]
+                )
+                
+                # Compile the graph with the checkpointer
                 graph = graph_builder.compile(checkpointer=checkpointer)
                 
                 # Try to get existing state first
