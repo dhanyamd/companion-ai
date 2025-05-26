@@ -14,6 +14,7 @@ from ai_companion.modules.images import ImageToText
 from ai_companion.speech.speech_to_text import SpeechToText
 from ai_companion.speech.text_to_speech import TextToSpeech
 from ai_companion.core.utils import clean_url, sanitize_string, URLValidator
+from ai_companion.graph.state import AICompanionState
 from settings import settings
 from dotenv import load_dotenv
 
@@ -91,8 +92,21 @@ async def whatsapp_handler_post(request: Request):
             # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH) as checkpointer:
                 graph = graph_builder.compile(checkpointer=checkpointer)
+                
+                # Create initial state with AICompanionState
+                initial_state = AICompanionState(
+                    messages=[HumanMessage(content=content)],
+                    summary="",
+                    workflow="conversation",
+                    audio_buffer=b"",
+                    image_path="",
+                    current_activity="",
+                    apply_activity=False,
+                    memory_context=""
+                )
+                
                 await graph.ainvoke(
-                    {"messages": [HumanMessage(content=content)]},
+                    initial_state,
                     {"configurable": {"thread_id": session_id}},
                 )
 
