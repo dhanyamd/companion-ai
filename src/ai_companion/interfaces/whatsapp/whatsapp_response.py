@@ -25,6 +25,9 @@ text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
 load_dotenv()
 
+# Ensure the data directory exists
+os.makedirs(os.path.dirname(settings.SHORT_TERM_MEMORY_DB_PATH), exist_ok=True)
+
 # Router for WhatsApp response
 whatsapp_router = APIRouter()
 
