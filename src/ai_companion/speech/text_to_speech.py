@@ -1,7 +1,7 @@
 import os 
 from typing import Optional 
 from ai_companion.core.exceptions import TextToSpeechError 
-from settings import settings 
+from settings import settings, clean_api_key
 from elevenlabs import ElevenLabs, Voice, VoiceSettings
 
 class TextToSpeech: 
@@ -11,7 +11,7 @@ class TextToSpeech:
     def __init__(self) -> None:
         """Intialize the text-to-speech class and validate env variables"""
         self._validate_env_vars() 
-        self._client: Optional[ElevenLabs] =None 
+        self._client: Optional[ElevenLabs] = None 
 
     def _validate_env_vars(self) -> None: 
         """Validate that all requiered env variables are set"""
@@ -23,8 +23,17 @@ class TextToSpeech:
     def client(self) -> ElevenLabs: 
         """Get or create Elevenlabs client instance using singleton pattern. """
         if self._client is None: 
-            self._client = ElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
-        return self._client 
+            # Clean the API key and ensure it's properly formatted
+            cleaned_api_key = clean_api_key(settings.ELEVENLABS_API_KEY)
+            if not cleaned_api_key:
+                raise ValueError("Invalid ElevenLabs API key")
+            self._client = ElevenLabs(api_key=cleaned_api_key)
+            # Test the connection
+            try:
+                self._client.Voice.list()
+            except Exception as e:
+                raise TextToSpeechError(f"Failed to initialize ElevenLabs client: {e}")
+        return self._client
     
     async def synthesize(self, text:str) -> bytes: 
         """Convert text to speech using Elevenlabs

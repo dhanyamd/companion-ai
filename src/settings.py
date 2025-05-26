@@ -73,6 +73,17 @@ class Settings(BaseSettings):
             url = 'https://' + url
         return url
 
+    @validator("ELEVENLABS_API_KEY")
+    def clean_elevenlabs_api_key(cls, v):
+        """Clean ElevenLabs API key."""
+        if not isinstance(v, str):
+            return ""
+        # Remove all whitespace and special characters
+        key = ''.join(v.split())
+        # Remove any non-alphanumeric characters except underscores
+        key = re.sub(r'[^a-zA-Z0-9_]', '', key)
+        return key
+
     @validator("TOGETHER_API_KEY")
     def clean_together_api_key(cls, v):
         """Clean Together API key."""
