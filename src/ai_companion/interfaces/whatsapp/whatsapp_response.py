@@ -94,16 +94,16 @@ async def whatsapp_handler_post(request: Request):
                 graph = graph_builder.compile(checkpointer=checkpointer)
                 
                 # Create initial state with AICompanionState
-                initial_state = AICompanionState(
-                    messages=[HumanMessage(content=content)],
-                    summary="",
-                    workflow="conversation",
-                    audio_buffer=b"",
-                    image_path="",
-                    current_activity="",
-                    apply_activity=False,
-                    memory_context=""
-                )
+                initial_state = {
+                    "messages": [HumanMessage(content=content)],
+                    "summary": "",
+                    "workflow": "conversation",
+                    "audio_buffer": b"",
+                    "image_path": "",
+                    "current_activity": "",
+                    "apply_activity": False,
+                    "memory_context": ""
+                }
                 
                 await graph.ainvoke(
                     initial_state,
