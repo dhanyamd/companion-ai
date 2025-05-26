@@ -88,8 +88,7 @@ class VectorStore:
                 headers={
                     "Authorization": f"Bearer {cleaned_api_key}",
                     "Content-Type": "application/json"
-                },
-                check_version=False  # Skip version check to avoid warnings
+                }
             )
             
             # Verify connection with a simple operation
