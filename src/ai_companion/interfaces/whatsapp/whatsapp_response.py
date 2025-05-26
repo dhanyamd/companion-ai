@@ -158,40 +158,41 @@ async def whatsapp_handler_post(request: Request):
                 }
 
                 # Create checkpointer with required configuration
-                async with AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH) as checkpointer:
-                    # Compile the graph with the checkpointer
-                    graph = graph_builder.compile(checkpointer=checkpointer)
-                    
-                    # Try to get existing state first
-                    try:
-                        existing_state = await checkpointer.get({"configurable": {"thread_id": session_id}})
-                        if existing_state:
-                            # Merge existing state with new message
-                            initial_state["messages"] = existing_state["messages"] + [message_dict]
-                            initial_state["summary"] = existing_state.get("summary", "")
-                            initial_state["workflow"] = existing_state.get("workflow", "conversation")
-                            initial_state["current_activity"] = existing_state.get("current_activity", "")
-                            initial_state["memory_context"] = existing_state.get("memory_context", "")
-                    except Exception as e:
-                        logger.warning(f"Could not load existing state: {e}")
-                    
-                    try:
-                        # First try with minimal configuration
-                        result = await graph.ainvoke(initial_state, {"configurable": {"thread_id": session_id}})
-                        logger.info("Graph invocation completed with minimal config")
-                    except Exception as inner_e:
-                        logger.warning(f"Minimal config failed: {str(inner_e)}")
-                        # If minimal config fails, try with full configuration
-                        result = await graph.ainvoke(initial_state, config)
-                        logger.info("Graph invocation completed with full config")
-                    
-                    if result and isinstance(result, dict):
-                        print("Graph invocation completed successfully.")
-                        return Response(content="Message processed successfully", status_code=200)
-                    else:
-                        logger.error("Graph returned invalid result")
-                        return Response(content="Invalid graph result", status_code=500)
-                    
+                checkpointer = AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH)
+                
+                # Compile the graph with the checkpointer
+                graph = graph_builder.compile(checkpointer=checkpointer)
+                
+                # Try to get existing state first
+                try:
+                    existing_state = await checkpointer.get({"configurable": {"thread_id": session_id}})
+                    if existing_state:
+                        # Merge existing state with new message
+                        initial_state["messages"] = existing_state["messages"] + [message_dict]
+                        initial_state["summary"] = existing_state.get("summary", "")
+                        initial_state["workflow"] = existing_state.get("workflow", "conversation")
+                        initial_state["current_activity"] = existing_state.get("current_activity", "")
+                        initial_state["memory_context"] = existing_state.get("memory_context", "")
+                except Exception as e:
+                    logger.warning(f"Could not load existing state: {e}")
+                
+                try:
+                    # First try with minimal configuration
+                    result = await graph.ainvoke(initial_state, {"configurable": {"thread_id": session_id}})
+                    logger.info("Graph invocation completed with minimal config")
+                except Exception as inner_e:
+                    logger.warning(f"Minimal config failed: {str(inner_e)}")
+                    # If minimal config fails, try with full configuration
+                    result = await graph.ainvoke(initial_state, config)
+                    logger.info("Graph invocation completed with full config")
+                
+                if result and isinstance(result, dict):
+                    print("Graph invocation completed successfully.")
+                    return Response(content="Message processed successfully", status_code=200)
+                else:
+                    logger.error("Graph returned invalid result")
+                    return Response(content="Invalid graph result", status_code=500)
+                
             except Exception as e:
                 logger.error(f"Error invoking graph: {str(e)}", exc_info=True)
                 error_details = {
