@@ -91,21 +91,8 @@ async def whatsapp_handler_post(request: Request):
             # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH) as checkpointer:
                 graph = graph_builder.compile(checkpointer=checkpointer)
-                
-                # Create initial state with all required fields
-                initial_state = {
-                    "messages": [HumanMessage(content=content)],
-                    "summary": "",
-                    "workflow": "conversation",
-                    "audio_buffer": b"",
-                    "image_path": "",
-                    "current_activity": "",
-                    "apply_activity": False,
-                    "memory_context": ""
-                }
-                
                 await graph.ainvoke(
-                    initial_state,
+                    {"messages": [HumanMessage(content=content)]},
                     {"configurable": {"thread_id": session_id}},
                 )
 
