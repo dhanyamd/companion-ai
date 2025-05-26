@@ -185,13 +185,15 @@ async def whatsapp_handler_post(request: Request):
                 
                 try:
                     # First try with minimal configuration
-                    result = await graph.ainvoke(initial_state)
-                    logger.info("Graph invocation completed with minimal config")
+                    async with checkpointer as cp:
+                        result = await graph.ainvoke(initial_state, {"configurable": {"thread_id": session_id}})
+                        logger.info("Graph invocation completed with minimal config")
                 except Exception as inner_e:
                     logger.warning(f"Minimal config failed: {str(inner_e)}")
                     # If minimal config fails, try with full configuration
-                    result = await graph.ainvoke(initial_state, config)
-                    logger.info("Graph invocation completed with full config")
+                    async with checkpointer as cp:
+                        result = await graph.ainvoke(initial_state, config)
+                        logger.info("Graph invocation completed with full config")
                 
                 if result and isinstance(result, dict):
                     print("Graph invocation completed successfully.")
