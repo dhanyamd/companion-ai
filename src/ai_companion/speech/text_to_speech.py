@@ -2,7 +2,7 @@ import os
 from typing import Optional 
 from ai_companion.core.exceptions import TextToSpeechError 
 from settings import settings, clean_api_key
-from elevenlabs import generate, set_api_key
+from elevenlabs import generate, set_api_key, Voice, VoiceSettings
 import logging
 
 class TextToSpeech: 
@@ -24,12 +24,17 @@ class TextToSpeech:
     def _initialize_client(self) -> None:
         """Initialize the ElevenLabs client with API key"""
         if not self._initialized:
-            # Clean the API key and ensure it's properly formatted
-            cleaned_api_key = clean_api_key(settings.ELEVENLABS_API_KEY)
-            if not cleaned_api_key:
-                raise ValueError("Invalid ElevenLabs API key")
-            set_api_key(cleaned_api_key)
-            self._initialized = True
+            try:
+                # Clean the API key and ensure it's properly formatted
+                cleaned_api_key = clean_api_key(settings.ELEVENLABS_API_KEY)
+                if not cleaned_api_key:
+                    raise ValueError("Invalid ElevenLabs API key")
+                set_api_key(cleaned_api_key)
+                self._initialized = True
+                self.logger.info("Successfully initialized ElevenLabs client")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize ElevenLabs client: {e}")
+                raise TextToSpeechError(f"Failed to initialize ElevenLabs client: {e}")
     
     async def synthesize(self, text: str) -> bytes: 
         """Convert text to speech using Elevenlabs
@@ -51,9 +56,22 @@ class TextToSpeech:
             self._initialize_client()
             self.logger.info(f"Generating speech for text: '{text[:100]}...'")
             
+            # Create voice settings
+            voice_settings = VoiceSettings(
+                stability=0.5,
+                similarity_boost=0.5
+            )
+            
+            # Create voice object
+            voice = Voice(
+                voice_id=settings.ELEVENLABS_VOICE_ID,
+                settings=voice_settings
+            )
+            
+            # Generate audio
             audio = generate(
                 text=text,
-                voice=settings.ELEVENLABS_VOICE_ID,
+                voice=voice,
                 model=settings.TTS_MODEL_NAME
             )
             
