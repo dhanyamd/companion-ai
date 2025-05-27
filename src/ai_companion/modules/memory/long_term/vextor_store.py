@@ -10,6 +10,7 @@ from huggingface_hub import HfFolder
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from huggingface_hub.errors import HfHubHTTPError
 
 from settings import settings
 from qdrant_client import QdrantClient
@@ -23,11 +24,12 @@ MODEL_CACHE_DIR = Path("models")
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # Updated to correct model identifier
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
 
-# Configure retry strategy
+# Configure retry strategy with longer backoff for rate limits
 retry_strategy = Retry(
-    total=3,  # number of retries
-    backoff_factor=1,  # wait 1, 2, 4 seconds between retries
-    status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry on
+    total=5,  # increased number of retries
+    backoff_factor=2,  # increased backoff factor
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET", "POST", "HEAD", "OPTIONS"],
 )
 adapter = HTTPAdapter(max_retries=retry_strategy)
 session = requests.Session()
@@ -89,8 +91,10 @@ class VectorStore:
                     logger.info("Successfully loaded model from cache")
                 except Exception as e:
                     logger.warning(f"Failed to load model from cache: {str(e)}")
+                    logger.info("Attempting to download model...")
                     self._download_and_save_model()
             else:
+                logger.info("No cached model found. Downloading model...")
                 self._download_and_save_model()
             
             logger.info("Initializing Qdrant client...")
@@ -108,8 +112,9 @@ class VectorStore:
 
     def _download_and_save_model(self) -> None:
         """Download and save the model locally with retry logic."""
-        max_attempts = 3
+        max_attempts = 5  # increased max attempts
         attempt = 0
+        base_wait_time = 5  # base wait time in seconds
         
         while attempt < max_attempts:
             try:
@@ -136,13 +141,27 @@ class VectorStore:
                 logger.info("Model downloaded and saved successfully")
                 return
                 
+            except HfHubHTTPError as e:
+                attempt += 1
+                if "429" in str(e):
+                    # Special handling for rate limit errors
+                    wait_time = base_wait_time * (2 ** attempt)  # Exponential backoff starting from 5 seconds
+                    logger.warning(f"Rate limit hit. Waiting {wait_time} seconds before retrying...")
+                    time.sleep(wait_time)
+                elif attempt == max_attempts:
+                    logger.error(f"Failed to download model after {max_attempts} attempts: {str(e)}")
+                    raise
+                else:
+                    wait_time = base_wait_time * (2 ** attempt)
+                    logger.warning(f"Attempt {attempt} failed. Waiting {wait_time} seconds before retrying...")
+                    time.sleep(wait_time)
             except Exception as e:
                 attempt += 1
                 if attempt == max_attempts:
                     logger.error(f"Failed to download and save model after {max_attempts} attempts: {str(e)}")
                     raise
                 
-                wait_time = 2 ** attempt  # Exponential backoff
+                wait_time = base_wait_time * (2 ** attempt)
                 logger.warning(f"Attempt {attempt} failed. Waiting {wait_time} seconds before retrying...")
                 time.sleep(wait_time)
 
