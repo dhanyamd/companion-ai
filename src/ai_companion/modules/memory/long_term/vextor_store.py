@@ -8,10 +8,12 @@ import re
 from pathlib import Path
 import time
 import requests
-from huggingface_hub import HfFolder, hf_hub_download, HfApi
+from huggingface_hub import HfFolder, hf_hub_download, HfApi, snapshot_download
 from huggingface_hub.utils import HfHubHTTPError
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import socket
+import urllib3
 
 from settings import settings
 from qdrant_client import QdrantClient
@@ -27,11 +29,60 @@ MODEL_CACHE_DIR = Path("models")
 EMBEDDING_MODEL = "all-MiniLM-L3-v2"  # Changed to a smaller model
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
 
+# Configure Hugging Face token if available
+if os.getenv("HUGGINGFACE_TOKEN"):
+    HfFolder.save_token(os.getenv("HUGGINGFACE_TOKEN"))
+
+# Configure proxy settings if available
+PROXY = os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+if PROXY:
+    logger.info(f"Using proxy: {PROXY}")
+    os.environ["HTTP_PROXY"] = PROXY
+    os.environ["HTTPS_PROXY"] = PROXY
+
+# Configure retry strategy for requests
+retry_strategy = Retry(
+    total=5,  # increased number of retries
+    backoff_factor=2,  # wait 2, 4, 8, 16, 32 seconds between retries
+    status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry on
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session = requests.Session()
+session.mount("https://", adapter)
+session.mount("http://", adapter)
+
+if PROXY:
+    session.proxies = {
+        "http": PROXY,
+        "https": PROXY
+    }
+
 def check_huggingface_connection() -> bool:
     """Check if we can connect to Hugging Face."""
     try:
-        response = requests.get("https://huggingface.co", timeout=5)
+        # First check DNS resolution
+        try:
+            socket.gethostbyname('huggingface.co')
+        except socket.gaierror:
+            logger.error("Failed to resolve huggingface.co domain")
+            return False
+
+        # Then try HTTP connection
+        response = session.get(
+            "https://huggingface.co",
+            timeout=10,
+            verify=True  # Ensure SSL verification
+        )
         return response.status_code == 200
+    except requests.exceptions.ProxyError as e:
+        logger.error(f"Proxy error connecting to Hugging Face: {str(e)}")
+        return False
+    except requests.exceptions.SSLError as e:
+        logger.error(f"SSL error connecting to Hugging Face: {str(e)}")
+        return False
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Connection error to Hugging Face: {str(e)}")
+        return False
     except Exception as e:
         logger.error(f"Failed to connect to Hugging Face: {str(e)}")
         return False
@@ -41,20 +92,28 @@ def verify_model_files(model_path: Path) -> bool:
     required_files = ["config.json", "pytorch_model.bin", "tokenizer.json"]
     return all((model_path / file).exists() for file in required_files)
 
-# Configure Hugging Face token if available
-if os.getenv("HUGGINGFACE_TOKEN"):
-    HfFolder.save_token(os.getenv("HUGGINGFACE_TOKEN"))
-
-# Configure retry strategy for requests
-retry_strategy = Retry(
-    total=3,  # number of retries
-    backoff_factor=2,  # wait 2, 4, 8 seconds between retries
-    status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry on
-)
-adapter = HTTPAdapter(max_retries=retry_strategy)
-session = requests.Session()
-session.mount("https://", adapter)
-session.mount("http://", adapter)
+def download_model_files(model_name: str, cache_dir: Path) -> bool:
+    """Download model files using snapshot_download."""
+    try:
+        logger.info(f"Downloading model {model_name} using snapshot_download")
+        # Configure huggingface_hub to use proxy if available
+        if PROXY:
+            os.environ["HF_ENDPOINT"] = "https://huggingface.co"
+            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+        
+        snapshot_download(
+            repo_id=f"sentence-transformers/{model_name}",
+            cache_dir=str(cache_dir),
+            token=os.getenv("HUGGINGFACE_TOKEN"),
+            local_files_only=False,
+            resume_download=True,
+            force_download=False,
+            proxies={"http": PROXY, "https": PROXY} if PROXY else None
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download model files: {str(e)}")
+        return False
 
 def clean_api_key(key: str) -> str:
     """Clean API key by removing all non-alphanumeric characters except for dots."""
@@ -191,6 +250,18 @@ class VectorStore:
             # Create model cache directory if it doesn't exist
             MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             
+            # Check Hugging Face connection
+            if not check_huggingface_connection():
+                # Try to use cached model if available
+                if EMBEDDING_MODEL_PATH.exists() and verify_model_files(EMBEDDING_MODEL_PATH):
+                    logger.info("Using cached model due to connection issues")
+                    self.model = SentenceTransformer(str(EMBEDDING_MODEL_PATH))
+                    return
+                raise EnvironmentError(
+                    "Cannot connect to Hugging Face. Please check your internet connection and proxy settings. "
+                    "If running in a cloud environment, ensure proper network access is configured."
+                )
+            
             # Try to load from local cache first
             if EMBEDDING_MODEL_PATH.exists() and verify_model_files(EMBEDDING_MODEL_PATH):
                 logger.info(f"Loading model from local cache: {EMBEDDING_MODEL_PATH}")
@@ -208,24 +279,9 @@ class VectorStore:
                     try:
                         logger.info(f"Attempting to load model {model_name} (attempt {attempt + 1}/{self.MAX_RETRIES})")
                         
-                        # Try to download model files first
-                        try:
-                            logger.info(f"Downloading model files for {model_name}")
-                            # Download all required files
-                            for filename in ["config.json", "pytorch_model.bin", "tokenizer.json"]:
-                                hf_hub_download(
-                                    repo_id=f"sentence-transformers/{model_name}",
-                                    filename=filename,
-                                    cache_dir=str(MODEL_CACHE_DIR),
-                                    token=os.getenv("HUGGINGFACE_TOKEN"),
-                                    local_files_only=False,
-                                    resume_download=True,
-                                    force_download=False
-                                )
-                            logger.info(f"Successfully downloaded model files for {model_name}")
-                        except Exception as e:
-                            logger.warning(f"Failed to download model files: {str(e)}")
-                            if "429" in str(e):
+                        # Download model files using snapshot_download
+                        if not download_model_files(model_name, MODEL_CACHE_DIR):
+                            if "429" in str(last_error):
                                 wait_time = self.RETRY_DELAY * (attempt + 1)
                                 logger.warning(f"Rate limit hit, waiting {wait_time} seconds before retry...")
                                 time.sleep(wait_time)
