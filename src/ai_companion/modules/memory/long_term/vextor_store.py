@@ -115,13 +115,20 @@ class VectorStore:
             try:
                 logger.info(f"Downloading model {self.EMBEDDING_MODEL} (attempt {attempt + 1}/{max_attempts})...")
                 
-                # Configure huggingface_hub to use our session with retry logic
-                HfFolder.save_token(settings.HUGGINGFACE_TOKEN if hasattr(settings, 'HUGGINGFACE_TOKEN') else None)
+                # Get HuggingFace token if available
+                hf_token = None
+                if hasattr(settings, 'HUGGINGFACE_TOKEN') and settings.HUGGINGFACE_TOKEN:
+                    hf_token = settings.HUGGINGFACE_TOKEN
+                    try:
+                        HfFolder.save_token(hf_token)
+                    except Exception as e:
+                        logger.warning(f"Failed to save HuggingFace token: {str(e)}")
                 
+                # Initialize model with or without token
                 self.model = SentenceTransformer(
                     self.EMBEDDING_MODEL,
                     cache_folder=str(MODEL_CACHE_DIR),
-                    use_auth_token=settings.HUGGINGFACE_TOKEN if hasattr(settings, 'HUGGINGFACE_TOKEN') else None
+                    use_auth_token=hf_token
                 )
                 
                 logger.info(f"Saving model to {EMBEDDING_MODEL_PATH}")
