@@ -22,7 +22,8 @@ speech_to_text = SpeechToText()
 text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
 load_dotenv()
-# Router for WhatsApp respo
+
+# Router for WhatsApp response
 whatsapp_router = APIRouter()
 
 # WhatsApp API credentials
@@ -42,6 +43,7 @@ async def whatsapp_handler(request: Request) -> Response:
 
     try:
         data = await request.json()
+        logger.info(f"Incoming data: {data}")
         change_value = data["entry"][0]["changes"][0]["value"]
         if "messages" in change_value:
             message = change_value["messages"][0]
@@ -68,36 +70,46 @@ async def whatsapp_handler(request: Request) -> Response:
             else:
                 content = message["text"]["body"]
 
+            # Create a properly formatted message for the graph
+            human_message = HumanMessage(content=content)
+
             # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(settings.SHORT_TERM_MEMORY_DB_PATH) as short_term_memory:
                 graph = graph_builder.compile(checkpointer=short_term_memory)
-                await graph.ainvoke(
-                    {"messages": [HumanMessage(content=content)]},
-                    {"configurable": {"thread_id": session_id}},
-                )
+                try:
+                    await graph.ainvoke(
+                        {"messages": [human_message]},
+                        {"configurable": {"thread_id": session_id}},
+                    )
 
-                # Get the workflow type and response from the state
-                output_state = await graph.aget_state(config={"configurable": {"thread_id": session_id}})
+                    # Get the workflow type and response from the state
+                    output_state = await graph.aget_state(config={"configurable": {"thread_id": session_id}})
 
-            workflow = output_state.values.get("workflow", "conversation")
-            response_message = output_state.values["messages"][-1].content
+                    workflow = output_state.values.get("workflow", "conversation")
+                    response_message = output_state.values["messages"][-1].content
 
-            # Handle different response types based on workflow
-            if workflow == "audio":
-                audio_buffer = output_state.values["audio_buffer"]
-                success = await send_response(from_number, response_message, "audio", audio_buffer)
-            elif workflow == "image":
-                image_path = output_state.values["image_path"]
-                with open(image_path, "rb") as f:
-                    image_data = f.read()
-                success = await send_response(from_number, response_message, "image", image_data)
-            else:
-                success = await send_response(from_number, response_message, "text")
+                    # Handle different response types based on workflow
+                    if workflow == "audio":
+                        audio_buffer = output_state.values["audio_buffer"]
+                        success = await send_response(from_number, response_message, "audio", audio_buffer)
+                    elif workflow == "image":
+                        image_path = output_state.values["image_path"]
+                        with open(image_path, "rb") as f:
+                            image_data = f.read()
+                        success = await send_response(from_number, response_message, "image", image_data)
+                    else:
+                        success = await send_response(from_number, response_message, "text")
 
-            if not success:
-                return Response(content="Failed to send message", status_code=500)
+                    if not success:
+                        return Response(content="Failed to send message", status_code=500)
 
-            return Response(content="Message processed", status_code=200)
+                    return Response(content="Message processed", status_code=200)
+                except Exception as e:
+                    logger.error(f"Error in graph processing: {e}", exc_info=True)
+                    # Send a fallback response
+                    fallback_message = "I apologize, but I encountered an error processing your message. Please try again."
+                    await send_response(from_number, fallback_message, "text")
+                    return Response(content="Error in graph processing", status_code=500)
 
         elif "statuses" in change_value:
             return Response(content="Status update received", status_code=200)
