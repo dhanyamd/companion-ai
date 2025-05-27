@@ -97,8 +97,9 @@ class VectorStore:
                 url=cleaned_url,
                 api_key=cleaned_api_key,
                 timeout=30.0,  # Increase timeout for initial connection
+                prefer_grpc=False,  # Use HTTP instead of gRPC
                 headers={
-                    "api-key": cleaned_api_key,
+                    "Authorization": f"Bearer {cleaned_api_key}",
                     "Content-Type": "application/json"
                 }
             )
@@ -114,6 +115,24 @@ class VectorStore:
                     logger.error("Authentication failed. Please check your Qdrant API key and URL.")
                     logger.error(f"URL: {cleaned_url}")
                     logger.error("API Key (first 10 chars): " + cleaned_api_key[:10] + "..." if cleaned_api_key else "None")
+                    # Try alternative authentication method
+                    try:
+                        logger.info("Trying alternative authentication method...")
+                        self.client = QdrantClient(
+                            url=cleaned_url,
+                            api_key=cleaned_api_key,
+                            timeout=30.0,
+                            prefer_grpc=False,
+                            headers={
+                                "api-key": cleaned_api_key,
+                                "Content-Type": "application/json"
+                            }
+                        )
+                        collections = self.client.get_collections()
+                        logger.info("Successfully connected with alternative authentication method")
+                    except Exception as alt_e:
+                        logger.error(f"Alternative authentication also failed: {str(alt_e)}")
+                        raise
                 raise
             
             # Create collection if it doesn't exist
