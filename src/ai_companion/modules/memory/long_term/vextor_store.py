@@ -7,8 +7,11 @@ import logging
 import re
 from pathlib import Path
 import time
-from huggingface_hub import HfFolder
+from huggingface_hub import HfFolder, hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from settings import settings
 from qdrant_client import QdrantClient
@@ -21,12 +24,23 @@ logger = logging.getLogger(__name__)
 
 # Define model paths
 MODEL_CACHE_DIR = Path("models")
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "all-MiniLM-L3-v2"  # Changed to a smaller model
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
 
 # Configure Hugging Face token if available
 if os.getenv("HUGGINGFACE_TOKEN"):
     HfFolder.save_token(os.getenv("HUGGINGFACE_TOKEN"))
+
+# Configure retry strategy for requests
+retry_strategy = Retry(
+    total=3,  # number of retries
+    backoff_factor=2,  # wait 2, 4, 8 seconds between retries
+    status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry on
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session = requests.Session()
+session.mount("https://", adapter)
+session.mount("http://", adapter)
 
 def clean_api_key(key: str) -> str:
     """Clean API key by removing all non-alphanumeric characters except for dots."""
@@ -61,6 +75,11 @@ class VectorStore:
     SIMILARITY_THRESHOLD = 0.9 
     MAX_RETRIES = 3
     RETRY_DELAY = 5  # seconds
+    FALLBACK_MODELS = [
+        "all-MiniLM-L3-v2",  # Primary model (smaller, faster)
+        "paraphrase-MiniLM-L3-v2",  # First fallback
+        "distiluse-base-multilingual-cased-v1"  # Second fallback
+    ]
 
     _instance: Optional["VectorStore"] = None 
     _initialized: bool = False
@@ -157,33 +176,59 @@ class VectorStore:
             # Try to load from local cache first
             if EMBEDDING_MODEL_PATH.exists():
                 logger.info(f"Loading model from local cache: {EMBEDDING_MODEL_PATH}")
-                self.model = SentenceTransformer(str(EMBEDDING_MODEL_PATH))
-                return
+                try:
+                    self.model = SentenceTransformer(str(EMBEDDING_MODEL_PATH))
+                    logger.info("Successfully loaded model from cache")
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to load model from cache: {str(e)}")
             
-            # List of models to try in order
-            models_to_try = [
-                self.EMBEDDING_MODEL,
-                "paraphrase-MiniLM-L3-v2",
-                "all-MiniLM-L3-v2"
-            ]
-            
+            # Try each model in the fallback list
             last_error = None
-            for model_name in models_to_try:
+            for model_name in self.FALLBACK_MODELS:
                 for attempt in range(self.MAX_RETRIES):
                     try:
                         logger.info(f"Attempting to load model {model_name} (attempt {attempt + 1}/{self.MAX_RETRIES})")
+                        
+                        # Try to download model files first
+                        try:
+                            logger.info(f"Downloading model files for {model_name}")
+                            hf_hub_download(
+                                repo_id=f"sentence-transformers/{model_name}",
+                                filename="config.json",
+                                cache_dir=str(MODEL_CACHE_DIR),
+                                token=os.getenv("HUGGINGFACE_TOKEN"),
+                                local_files_only=False,
+                                resume_download=True,
+                                force_download=False
+                            )
+                            logger.info(f"Successfully downloaded model files for {model_name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to download model files: {str(e)}")
+                            if "429" in str(e):
+                                wait_time = self.RETRY_DELAY * (attempt + 1)
+                                logger.warning(f"Rate limit hit, waiting {wait_time} seconds before retry...")
+                                time.sleep(wait_time)
+                            continue
+                        
+                        # Initialize the model
+                        logger.info(f"Initializing model {model_name}")
                         self.model = SentenceTransformer(
                             model_name_or_path=model_name,
                             cache_folder=str(MODEL_CACHE_DIR)
                         )
+                        
                         # Save the model locally
+                        logger.info(f"Saving model {model_name} to local cache")
                         self.model.save(str(EMBEDDING_MODEL_PATH))
                         logger.info(f"Model {model_name} loaded and saved successfully")
                         return
+                        
                     except HfHubHTTPError as e:
                         if "429" in str(e):
-                            logger.warning(f"Rate limit hit, waiting {self.RETRY_DELAY} seconds before retry...")
-                            time.sleep(self.RETRY_DELAY)
+                            wait_time = self.RETRY_DELAY * (attempt + 1)
+                            logger.warning(f"Rate limit hit, waiting {wait_time} seconds before retry...")
+                            time.sleep(wait_time)
                             last_error = e
                             continue
                         raise
