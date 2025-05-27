@@ -92,14 +92,15 @@ class VectorStore:
             
             logger.info(f"Initializing Qdrant client with URL: {cleaned_url}")
             
-            # Initialize Qdrant client with proper headers for authentication
+            # Initialize Qdrant client with proper configuration
             self.client = QdrantClient(
                 url=cleaned_url,
                 api_key=cleaned_api_key,
                 timeout=30.0,  # Increase timeout for initial connection
                 prefer_grpc=False,  # Use HTTP instead of gRPC
+                check_version=False,  # Disable version check
                 headers={
-                    "Authorization": f"Bearer {cleaned_api_key}",
+                    "api-key": cleaned_api_key,
                     "Content-Type": "application/json"
                 }
             )
@@ -123,8 +124,9 @@ class VectorStore:
                             api_key=cleaned_api_key,
                             timeout=30.0,
                             prefer_grpc=False,
+                            check_version=False,
                             headers={
-                                "api-key": cleaned_api_key,
+                                "Authorization": f"Bearer {cleaned_api_key}",
                                 "Content-Type": "application/json"
                             }
                         )

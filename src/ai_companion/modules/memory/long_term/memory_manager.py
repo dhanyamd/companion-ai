@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 import os
 import re
+from functools import lru_cache
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
 from ai_companion.modules.memory.long_term.vextor_store import get_vector_store
@@ -87,6 +88,7 @@ class MemoryManager:
         return "\n".join(f"- {memory}" for memory in memories)
     
 
+@lru_cache
 def get_memory_manager() -> MemoryManager:
     """Get a MemoryManager instance."""
     return MemoryManager()
