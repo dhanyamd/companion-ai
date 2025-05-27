@@ -47,13 +47,6 @@ class TextToImage:
             if not cleaned_api_key:
                 raise ValueError("Invalid Together API key")
             self._together_client = Together(api_key=cleaned_api_key)
-            # Test the connection
-            try:
-                # List available models to test the connection
-                self._together_client.Models.list()
-            except Exception as e:
-                self.logger.error(f"Failed to initialize Together client: {e}")
-                raise TextToImageError(f"Failed to initialize Together client: {e}")
         return self._together_client
     
     async def generate_image(self, prompt: str, output_path: str = "") -> bytes: 
@@ -63,7 +56,12 @@ class TextToImage:
         
         try: 
             self.logger.info(f"Generating image for prompt: '{prompt}'") 
-            response = self.together_client.images.generate(
+            
+            # Ensure client is initialized
+            client = self.together_client
+            
+            # Generate image using Together API
+            response = await client.images.generate(
                 prompt=prompt,
                 model=settings.TTI_MODEL_NAME,
                 width=1024,
@@ -72,7 +70,12 @@ class TextToImage:
                 n=1,
                 response_format="b64_json"
             )
-            image_data = base64.b64decode(response.data[0].b64_json) 
+            
+            if not response or not response.data or not response.data[0].b64_json:
+                raise TextToImageError("No image data received from Together API")
+                
+            image_data = base64.b64decode(response.data[0].b64_json)
+            
             if output_path: 
                 os.makedirs(os.path.dirname(output_path), exist_ok=True) 
                 with open(output_path, "wb") as f: 

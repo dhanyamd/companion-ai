@@ -20,6 +20,7 @@ class TextToSpeech:
         missing_vars = [var for var in self.REQUIRED_ENV_VARS if not os.getenv(var)]
         if missing_vars: 
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
     def _initialize_client(self) -> None:
         """Initialize the ElevenLabs client with API key"""
         if not self._initialized:
@@ -68,7 +69,7 @@ class TextToSpeech:
             )
             
             # Generate audio
-            audio = generate(
+            audio = await generate(
                 text=text,
                 voice=voice,
                 model=settings.TTS_MODEL_NAME
