@@ -5,6 +5,11 @@ from functools import lru_cache
 from typing import List, Optional
 import logging
 from pathlib import Path
+import time
+from huggingface_hub import HfFolder
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from settings import settings
 from qdrant_client import QdrantClient
@@ -17,6 +22,17 @@ logger = logging.getLogger(__name__)
 MODEL_CACHE_DIR = Path("models")
 EMBEDDING_MODEL = "all-MiniLM-L3-v2"  # Smaller, faster model
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
+
+# Configure retry strategy
+retry_strategy = Retry(
+    total=3,  # number of retries
+    backoff_factor=1,  # wait 1, 2, 4 seconds between retries
+    status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry on
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session = requests.Session()
+session.mount("https://", adapter)
+session.mount("http://", adapter)
 
 @dataclass
 class Memory:
@@ -78,7 +94,11 @@ class VectorStore:
                 self._download_and_save_model()
             
             logger.info("Initializing Qdrant client...")
-            self.client = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
+            self.client = QdrantClient(
+                url=settings.QDRANT_URL,
+                api_key=settings.QDRANT_API_KEY,
+                timeout=10.0
+            )
             self._initialized = True
             logger.info("Vector store initialized successfully")
         except Exception as e:
@@ -87,16 +107,37 @@ class VectorStore:
             raise
 
     def _download_and_save_model(self) -> None:
-        """Download and save the model locally."""
-        try:
-            logger.info(f"Downloading model {self.EMBEDDING_MODEL}...")
-            self.model = SentenceTransformer(self.EMBEDDING_MODEL)
-            logger.info(f"Saving model to {EMBEDDING_MODEL_PATH}")
-            self.model.save(str(EMBEDDING_MODEL_PATH))
-            logger.info("Model downloaded and saved successfully")
-        except Exception as e:
-            logger.error(f"Failed to download and save model: {str(e)}")
-            raise
+        """Download and save the model locally with retry logic."""
+        max_attempts = 3
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                logger.info(f"Downloading model {self.EMBEDDING_MODEL} (attempt {attempt + 1}/{max_attempts})...")
+                
+                # Configure huggingface_hub to use our session with retry logic
+                HfFolder.save_token(settings.HUGGINGFACE_TOKEN if hasattr(settings, 'HUGGINGFACE_TOKEN') else None)
+                
+                self.model = SentenceTransformer(
+                    self.EMBEDDING_MODEL,
+                    cache_folder=str(MODEL_CACHE_DIR),
+                    use_auth_token=settings.HUGGINGFACE_TOKEN if hasattr(settings, 'HUGGINGFACE_TOKEN') else None
+                )
+                
+                logger.info(f"Saving model to {EMBEDDING_MODEL_PATH}")
+                self.model.save(str(EMBEDDING_MODEL_PATH))
+                logger.info("Model downloaded and saved successfully")
+                return
+                
+            except Exception as e:
+                attempt += 1
+                if attempt == max_attempts:
+                    logger.error(f"Failed to download and save model after {max_attempts} attempts: {str(e)}")
+                    raise
+                
+                wait_time = 2 ** attempt  # Exponential backoff
+                logger.warning(f"Attempt {attempt} failed. Waiting {wait_time} seconds before retrying...")
+                time.sleep(wait_time)
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
