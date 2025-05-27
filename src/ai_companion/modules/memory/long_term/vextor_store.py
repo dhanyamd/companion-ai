@@ -6,6 +6,9 @@ from typing import List, Optional
 import logging
 import re
 from pathlib import Path
+import time
+from huggingface_hub import HfFolder
+from huggingface_hub.utils import HfHubHTTPError
 
 from settings import settings
 from qdrant_client import QdrantClient
@@ -20,6 +23,10 @@ logger = logging.getLogger(__name__)
 MODEL_CACHE_DIR = Path("models")
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
+
+# Configure Hugging Face token if available
+if os.getenv("HUGGINGFACE_TOKEN"):
+    HfFolder.save_token(os.getenv("HUGGINGFACE_TOKEN"))
 
 def clean_api_key(key: str) -> str:
     """Clean API key by removing all non-alphanumeric characters except for dots."""
@@ -52,6 +59,8 @@ class VectorStore:
     EMBEDDING_MODEL = EMBEDDING_MODEL
     COLLECTION_NAME = "long_term_memory"
     SIMILARITY_THRESHOLD = 0.9 
+    MAX_RETRIES = 3
+    RETRY_DELAY = 5  # seconds
 
     _instance: Optional["VectorStore"] = None 
     _initialized: bool = False
@@ -119,7 +128,7 @@ class VectorStore:
             raise
     
     def _initialize_model(self) -> None:
-        """Initialize the sentence transformer model with fallback options."""
+        """Initialize the sentence transformer model with fallback options and retry logic."""
         try:
             # Create model cache directory if it doesn't exist
             MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -128,39 +137,42 @@ class VectorStore:
             if EMBEDDING_MODEL_PATH.exists():
                 logger.info(f"Loading model from local cache: {EMBEDDING_MODEL_PATH}")
                 self.model = SentenceTransformer(str(EMBEDDING_MODEL_PATH))
-            else:
-                # Try to download with increased timeout and retries
-                logger.info(f"Downloading model: {self.EMBEDDING_MODEL}")
-                try:
-                    # Initialize with only basic parameters
-                    self.model = SentenceTransformer(
-                        model_name_or_path=self.EMBEDDING_MODEL,
-                        cache_folder=str(MODEL_CACHE_DIR)
-                    )
-                    # Save the model locally
-                    self.model.save(str(EMBEDDING_MODEL_PATH))
-                    logger.info(f"Model saved to: {EMBEDDING_MODEL_PATH}")
-                except Exception as download_error:
-                    logger.error(f"Error downloading model: {str(download_error)}")
-                    # Try fallback model if main model fails
+                return
+            
+            # List of models to try in order
+            models_to_try = [
+                self.EMBEDDING_MODEL,
+                "paraphrase-MiniLM-L3-v2",
+                "all-MiniLM-L3-v2"
+            ]
+            
+            last_error = None
+            for model_name in models_to_try:
+                for attempt in range(self.MAX_RETRIES):
                     try:
-                        logger.info("Trying fallback model: paraphrase-MiniLM-L3-v2")
+                        logger.info(f"Attempting to load model {model_name} (attempt {attempt + 1}/{self.MAX_RETRIES})")
                         self.model = SentenceTransformer(
-                            model_name_or_path="paraphrase-MiniLM-L3-v2",
+                            model_name_or_path=model_name,
                             cache_folder=str(MODEL_CACHE_DIR)
                         )
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback model also failed: {str(fallback_error)}")
-                        # Try one last time with a simpler model
-                        try:
-                            logger.info("Trying final fallback: all-MiniLM-L3-v2")
-                            self.model = SentenceTransformer(
-                                model_name_or_path="all-MiniLM-L3-v2",
-                                cache_folder=str(MODEL_CACHE_DIR)
-                            )
-                        except Exception as final_error:
-                            logger.error(f"All model loading attempts failed: {str(final_error)}")
-                            raise
+                        # Save the model locally
+                        self.model.save(str(EMBEDDING_MODEL_PATH))
+                        logger.info(f"Model {model_name} loaded and saved successfully")
+                        return
+                    except HfHubHTTPError as e:
+                        if "429" in str(e):
+                            logger.warning(f"Rate limit hit, waiting {self.RETRY_DELAY} seconds before retry...")
+                            time.sleep(self.RETRY_DELAY)
+                            last_error = e
+                            continue
+                        raise
+                    except Exception as e:
+                        logger.error(f"Error loading model {model_name}: {str(e)}")
+                        last_error = e
+                        break
+            
+            if last_error:
+                raise last_error
                 
         except Exception as e:
             logger.error(f"Error initializing model: {str(e)}")
