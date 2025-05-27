@@ -88,13 +88,9 @@ class VectorStore:
             
             # Verify connection with a simple operation
             try:
-                # First try to get server info
-                server_info = self.client.get_telemetry()
-                logger.info(f"Successfully connected to Qdrant server version: {server_info.version}")
-                
-                # Then try to get collections
+                # Try to get collections as a simple connection test
                 collections = self.client.get_collections()
-                logger.info(f"Found {len(collections.collections)} collections")
+                logger.info(f"Successfully connected to Qdrant. Found {len(collections.collections)} collections")
             except Exception as e:
                 logger.error(f"Failed to connect to Qdrant: {str(e)}")
                 if "403" in str(e):
