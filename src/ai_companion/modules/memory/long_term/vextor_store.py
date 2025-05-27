@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Define model paths
 MODEL_CACHE_DIR = Path("models")
-EMBEDDING_MODEL = "all-MiniLM-L3-v2"  # Smaller, faster model
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # Updated to correct model identifier
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
 
 # Configure retry strategy
