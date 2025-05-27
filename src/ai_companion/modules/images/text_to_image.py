@@ -5,7 +5,7 @@ from typing import Optional
 
 from ai_companion.core.exceptions import TextToImageError
 from ai_companion.core.prompts import IMAGE_ENHANCEMENT_PROMPT, IMAGE_SCENARIO_PROMPT
-from settings import clean_api_key, settings
+from settings import settings, clean_api_key
 from langchain.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
@@ -18,12 +18,8 @@ class ScenarioPrompt(BaseModel):
     image_prompt: str = Field(..., description="The visual prompt to generate an image representing the scene")
 
 class EnhancedPrompt(BaseModel):
-    """Class for the text prompt"""
-
-    content: str = Field(
-        ...,
-        description="The enhanced text prompt to generate an image",
-    )
+    """Class for the enhanced prompt response"""
+    content: str = Field(..., description="The enhanced prompt with additional details")
 
 class TextToImage:
     """A class to handle text-to-image generation using Together AI."""
@@ -44,7 +40,7 @@ class TextToImage:
         
     @property
     def together_client(self) -> Together: 
-        """Get or create Together client instance using singleton pattern. """ 
+        """Get or create Together client instance using singleton pattern.""" 
         if self._together_client is None: 
             # Clean the API key and ensure it's properly formatted
             cleaned_api_key = clean_api_key(settings.TOGETHER_API_KEY)
@@ -53,10 +49,11 @@ class TextToImage:
             self._together_client = Together(api_key=cleaned_api_key)
             # Test the connection
             try:
+                # List available models to test the connection
                 self._together_client.Models.list()
             except Exception as e:
                 self.logger.error(f"Failed to initialize Together client: {e}")
-                raise
+                raise TextToImageError(f"Failed to initialize Together client: {e}")
         return self._together_client
     
     async def generate_image(self, prompt: str, output_path: str = "") -> bytes: 
@@ -65,7 +62,7 @@ class TextToImage:
             raise ValueError("Prompt cannot be empty")
         
         try: 
-            self.logger.info(f"Generating image for prompt: '{prompt}") 
+            self.logger.info(f"Generating image for prompt: '{prompt}'") 
             response = self.together_client.images.generate(
                 prompt=prompt,
                 model=settings.TTI_MODEL_NAME,
@@ -84,8 +81,9 @@ class TextToImage:
 
             return image_data 
         except Exception as e: 
-            raise TextToImageError(f"Failed to generate imgae: {str(e)}") from e 
-        
+            self.logger.error(f"Failed to generate image: {str(e)}")
+            raise TextToImageError(f"Failed to generate image: {str(e)}") from e
+
     async def create_scenario(self, chat_history: list = None) -> ScenarioPrompt: 
         """Creates a first-person narrative scenario and corresponding image prompt based on chat history."""
        
