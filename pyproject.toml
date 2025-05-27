@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "chainlit>=1.3.2",
-    "elevenlabs==0.2.24",
+    "elevenlabs>=1.50.3",
     "fastapi[standard]>=0.115.6",
     "groq>=0.13.1",
     "langchain-community>=0.3.13",
