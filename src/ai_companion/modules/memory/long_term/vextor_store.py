@@ -126,15 +126,10 @@ class VectorStore:
                 # Try to download with increased timeout and retries
                 logger.info(f"Downloading model: {self.EMBEDDING_MODEL}")
                 try:
+                    # Initialize with only basic parameters
                     self.model = SentenceTransformer(
-                        self.EMBEDDING_MODEL,
-                        cache_folder=str(MODEL_CACHE_DIR),
-                        device="cpu",  # Force CPU to avoid GPU memory issues
-                        use_auth_token=False,  # Don't use auth token to avoid rate limits
-                        local_files_only=False,  # Allow downloading if not in cache
-                        proxies=None,  # Don't use proxies
-                        resume_download=True,  # Resume interrupted downloads
-                        max_retries=3  # Increase retries
+                        model_name_or_path=self.EMBEDDING_MODEL,
+                        cache_folder=str(MODEL_CACHE_DIR)
                     )
                     # Save the model locally
                     self.model.save(str(EMBEDDING_MODEL_PATH))
@@ -145,14 +140,8 @@ class VectorStore:
                     try:
                         logger.info("Trying fallback model: paraphrase-MiniLM-L3-v2")
                         self.model = SentenceTransformer(
-                            "paraphrase-MiniLM-L3-v2",
-                            cache_folder=str(MODEL_CACHE_DIR),
-                            device="cpu",
-                            use_auth_token=False,
-                            local_files_only=False,
-                            proxies=None,
-                            resume_download=True,
-                            max_retries=3
+                            model_name_or_path="paraphrase-MiniLM-L3-v2",
+                            cache_folder=str(MODEL_CACHE_DIR)
                         )
                     except Exception as fallback_error:
                         logger.error(f"Fallback model also failed: {str(fallback_error)}")
@@ -160,14 +149,8 @@ class VectorStore:
                         try:
                             logger.info("Trying final fallback: all-MiniLM-L3-v2")
                             self.model = SentenceTransformer(
-                                "all-MiniLM-L3-v2",
-                                cache_folder=str(MODEL_CACHE_DIR),
-                                device="cpu",
-                                use_auth_token=False,
-                                local_files_only=False,
-                                proxies=None,
-                                resume_download=True,
-                                max_retries=3
+                                model_name_or_path="all-MiniLM-L3-v2",
+                                cache_folder=str(MODEL_CACHE_DIR)
                             )
                         except Exception as final_error:
                             logger.error(f"All model loading attempts failed: {str(final_error)}")
