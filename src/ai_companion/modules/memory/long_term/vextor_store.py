@@ -77,13 +77,21 @@ class VectorStore:
             if not cleaned_url or not cleaned_api_key:
                 raise ValueError("Qdrant URL and API key must not be empty")
             
+            # Ensure URL starts with https://
+            if not cleaned_url.startswith('https://'):
+                cleaned_url = 'https://' + cleaned_url
+            
             logger.info(f"Initializing Qdrant client with URL: {cleaned_url}")
             
-            # Initialize Qdrant client with minimal required parameters
+            # Initialize Qdrant client with proper headers for authentication
             self.client = QdrantClient(
                 url=cleaned_url,
                 api_key=cleaned_api_key,
-                timeout=30.0  # Increase timeout for initial connection
+                timeout=30.0,  # Increase timeout for initial connection
+                headers={
+                    "api-key": cleaned_api_key,
+                    "Content-Type": "application/json"
+                }
             )
             
             # Verify connection with a simple operation
@@ -95,6 +103,8 @@ class VectorStore:
                 logger.error(f"Failed to connect to Qdrant: {str(e)}")
                 if "403" in str(e):
                     logger.error("Authentication failed. Please check your Qdrant API key and URL.")
+                    logger.error(f"URL: {cleaned_url}")
+                    logger.error("API Key (first 10 chars): " + cleaned_api_key[:10] + "..." if cleaned_api_key else "None")
                 raise
             
             # Create collection if it doesn't exist
