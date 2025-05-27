@@ -79,24 +79,26 @@ class VectorStore:
             
             logger.info(f"Initializing Qdrant client with URL: {cleaned_url}")
             
-            # Initialize Qdrant client with cleaned values and explicit headers
+            # Initialize Qdrant client with minimal required parameters
             self.client = QdrantClient(
                 url=cleaned_url,
                 api_key=cleaned_api_key,
-                timeout=10.0,  # Add timeout to prevent hanging
-                prefer_grpc=False,  # Use HTTP instead of gRPC
-                headers={
-                    "Authorization": f"Bearer {cleaned_api_key}",
-                    "Content-Type": "application/json"
-                }
+                timeout=30.0  # Increase timeout for initial connection
             )
             
             # Verify connection with a simple operation
             try:
+                # First try to get server info
+                server_info = self.client.get_telemetry()
+                logger.info(f"Successfully connected to Qdrant server version: {server_info.version}")
+                
+                # Then try to get collections
                 collections = self.client.get_collections()
-                logger.info(f"Successfully connected to Qdrant. Found {len(collections.collections)} collections")
+                logger.info(f"Found {len(collections.collections)} collections")
             except Exception as e:
                 logger.error(f"Failed to connect to Qdrant: {str(e)}")
+                if "403" in str(e):
+                    logger.error("Authentication failed. Please check your Qdrant API key and URL.")
                 raise
             
             # Create collection if it doesn't exist
@@ -123,28 +125,57 @@ class VectorStore:
             else:
                 # Try to download with increased timeout and retries
                 logger.info(f"Downloading model: {self.EMBEDDING_MODEL}")
-                self.model = SentenceTransformer(
-                    self.EMBEDDING_MODEL,
-                    cache_folder=str(MODEL_CACHE_DIR),
-                    device="cpu"  # Force CPU to avoid GPU memory issues
-                )
-                # Save the model locally
-                self.model.save(str(EMBEDDING_MODEL_PATH))
-                logger.info(f"Model saved to: {EMBEDDING_MODEL_PATH}")
+                try:
+                    self.model = SentenceTransformer(
+                        self.EMBEDDING_MODEL,
+                        cache_folder=str(MODEL_CACHE_DIR),
+                        device="cpu",  # Force CPU to avoid GPU memory issues
+                        use_auth_token=False,  # Don't use auth token to avoid rate limits
+                        local_files_only=False,  # Allow downloading if not in cache
+                        proxies=None,  # Don't use proxies
+                        resume_download=True,  # Resume interrupted downloads
+                        max_retries=3  # Increase retries
+                    )
+                    # Save the model locally
+                    self.model.save(str(EMBEDDING_MODEL_PATH))
+                    logger.info(f"Model saved to: {EMBEDDING_MODEL_PATH}")
+                except Exception as download_error:
+                    logger.error(f"Error downloading model: {str(download_error)}")
+                    # Try fallback model if main model fails
+                    try:
+                        logger.info("Trying fallback model: paraphrase-MiniLM-L3-v2")
+                        self.model = SentenceTransformer(
+                            "paraphrase-MiniLM-L3-v2",
+                            cache_folder=str(MODEL_CACHE_DIR),
+                            device="cpu",
+                            use_auth_token=False,
+                            local_files_only=False,
+                            proxies=None,
+                            resume_download=True,
+                            max_retries=3
+                        )
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback model also failed: {str(fallback_error)}")
+                        # Try one last time with a simpler model
+                        try:
+                            logger.info("Trying final fallback: all-MiniLM-L3-v2")
+                            self.model = SentenceTransformer(
+                                "all-MiniLM-L3-v2",
+                                cache_folder=str(MODEL_CACHE_DIR),
+                                device="cpu",
+                                use_auth_token=False,
+                                local_files_only=False,
+                                proxies=None,
+                                resume_download=True,
+                                max_retries=3
+                            )
+                        except Exception as final_error:
+                            logger.error(f"All model loading attempts failed: {str(final_error)}")
+                            raise
                 
         except Exception as e:
             logger.error(f"Error initializing model: {str(e)}")
-            # Try fallback model if main model fails
-            try:
-                logger.info("Trying fallback model: paraphrase-MiniLM-L3-v2")
-                self.model = SentenceTransformer(
-                    "paraphrase-MiniLM-L3-v2",
-                    cache_folder=str(MODEL_CACHE_DIR),
-                    device="cpu"
-                )
-            except Exception as fallback_error:
-                logger.error(f"Fallback model also failed: {str(fallback_error)}")
-                raise
+            raise
 
     def _collection_exists(self) -> bool: 
         """Check if the memory collection exists."""

@@ -1,6 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, validator
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 def clean_api_key(key: str) -> str:
     """Clean API key by removing all whitespace and special characters."""
@@ -55,10 +58,15 @@ class Settings(BaseSettings):
         """Clean Qdrant API key."""
         if not isinstance(v, str):
             return ""
-        # Remove all whitespace and special characters
+        # Remove all whitespace and newlines
         key = ''.join(v.split())
-        # Remove any non-alphanumeric characters except dots and hyphens
-        key = re.sub(r'[^a-zA-Z0-9.\-]', '', key)
+        # For JWT tokens, we want to preserve dots and hyphens
+        # Remove any other special characters
+        key = re.sub(r'[^a-zA-Z0-9.\-_]', '', key)
+        # Ensure the key is a valid JWT format (three parts separated by dots)
+        parts = key.split('.')
+        if len(parts) != 3:
+            logger.warning("Qdrant API key does not appear to be in valid JWT format")
         return key
 
     @validator("QDRANT_URL")
