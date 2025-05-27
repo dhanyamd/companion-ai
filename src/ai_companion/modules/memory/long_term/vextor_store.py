@@ -7,9 +7,9 @@ import logging
 import re
 from pathlib import Path
 import time
-from huggingface_hub import HfFolder, hf_hub_download
-from huggingface_hub.utils import HfHubHTTPError
 import requests
+from huggingface_hub import HfFolder, hf_hub_download, HfApi
+from huggingface_hub.utils import HfHubHTTPError
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -26,6 +26,20 @@ logger = logging.getLogger(__name__)
 MODEL_CACHE_DIR = Path("models")
 EMBEDDING_MODEL = "all-MiniLM-L3-v2"  # Changed to a smaller model
 EMBEDDING_MODEL_PATH = MODEL_CACHE_DIR / EMBEDDING_MODEL
+
+def check_huggingface_connection() -> bool:
+    """Check if we can connect to Hugging Face."""
+    try:
+        response = requests.get("https://huggingface.co", timeout=5)
+        return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Failed to connect to Hugging Face: {str(e)}")
+        return False
+
+def verify_model_files(model_path: Path) -> bool:
+    """Verify that all required model files exist."""
+    required_files = ["config.json", "pytorch_model.bin", "tokenizer.json"]
+    return all((model_path / file).exists() for file in required_files)
 
 # Configure Hugging Face token if available
 if os.getenv("HUGGINGFACE_TOKEN"):
@@ -95,6 +109,10 @@ class VectorStore:
             return
 
         try:
+            # Check Hugging Face connection first
+            if not check_huggingface_connection():
+                raise EnvironmentError("Cannot connect to Hugging Face. Please check your internet connection.")
+
             # Initialize the embedding model first
             self._initialize_model()
             
@@ -174,7 +192,7 @@ class VectorStore:
             MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             
             # Try to load from local cache first
-            if EMBEDDING_MODEL_PATH.exists():
+            if EMBEDDING_MODEL_PATH.exists() and verify_model_files(EMBEDDING_MODEL_PATH):
                 logger.info(f"Loading model from local cache: {EMBEDDING_MODEL_PATH}")
                 try:
                     self.model = SentenceTransformer(str(EMBEDDING_MODEL_PATH))
@@ -193,15 +211,17 @@ class VectorStore:
                         # Try to download model files first
                         try:
                             logger.info(f"Downloading model files for {model_name}")
-                            hf_hub_download(
-                                repo_id=f"sentence-transformers/{model_name}",
-                                filename="config.json",
-                                cache_dir=str(MODEL_CACHE_DIR),
-                                token=os.getenv("HUGGINGFACE_TOKEN"),
-                                local_files_only=False,
-                                resume_download=True,
-                                force_download=False
-                            )
+                            # Download all required files
+                            for filename in ["config.json", "pytorch_model.bin", "tokenizer.json"]:
+                                hf_hub_download(
+                                    repo_id=f"sentence-transformers/{model_name}",
+                                    filename=filename,
+                                    cache_dir=str(MODEL_CACHE_DIR),
+                                    token=os.getenv("HUGGINGFACE_TOKEN"),
+                                    local_files_only=False,
+                                    resume_download=True,
+                                    force_download=False
+                                )
                             logger.info(f"Successfully downloaded model files for {model_name}")
                         except Exception as e:
                             logger.warning(f"Failed to download model files: {str(e)}")
