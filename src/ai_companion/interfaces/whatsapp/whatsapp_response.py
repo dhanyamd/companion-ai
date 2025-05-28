@@ -20,14 +20,8 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# Global module instances
-speech_to_text = SpeechToText()
-text_to_speech = TextToSpeech()
-image_to_text = ImageToText()
+# Load environment variables
 load_dotenv()
-
-# Ensure the data directory exists
-os.makedirs(os.path.dirname(settings.SHORT_TERM_MEMORY_DB_PATH), exist_ok=True)
 
 # Router for WhatsApp response
 whatsapp_router = APIRouter()
@@ -39,6 +33,32 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
 # Cloud environment detection
 IS_CLOUD = os.getenv("RUNNING_IN_CLOUD", "0").lower() in ("1", "true", "yes")
 print(f"Cloud environment detected: {IS_CLOUD} (RUNNING_IN_CLOUD={os.getenv('RUNNING_IN_CLOUD')})")
+
+# Lazy-loaded components
+_speech_to_text = None
+_text_to_speech = None
+_image_to_text = None
+
+def get_speech_to_text():
+    global _speech_to_text
+    if _speech_to_text is None:
+        _speech_to_text = SpeechToText()
+    return _speech_to_text
+
+def get_text_to_speech():
+    global _text_to_speech
+    if _text_to_speech is None:
+        _text_to_speech = TextToSpeech()
+    return _text_to_speech
+
+def get_image_to_text():
+    global _image_to_text
+    if _image_to_text is None:
+        _image_to_text = ImageToText()
+    return _image_to_text
+
+# Ensure the data directory exists
+os.makedirs(os.path.dirname(settings.SHORT_TERM_MEMORY_DB_PATH), exist_ok=True)
 
 @whatsapp_router.get("/whatsapp_response")
 async def whatsapp_webhook_get(request: Request):
@@ -76,7 +96,7 @@ async def whatsapp_handler_post(request: Request):
                 # Download and analyze image
                 image_bytes = await download_media(message["image"]["id"])
                 try:
-                    description = await image_to_text.analyze_image(
+                    description = await get_image_to_text().analyze_image(
                         image_bytes,
                         "Please describe what you see in this image in the context of our conversation.",
                     )
@@ -161,27 +181,37 @@ async def download_media(media_id: str) -> bytes:
         media_response.raise_for_status()
         return media_response.content
 
-async def process_audio_message(message: Dict) -> str:
-    """Download and transcribe audio message."""
-    audio_id = message["audio"]["id"]
-    media_metadata_url = f"https://graph.facebook.com/v21.0/{audio_id}"
-    headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+async def process_audio_message(message: Dict[str, Any]) -> str:
+    """Process an audio message by downloading and transcribing it."""
+    try:
+        # Get the media ID
+        media_id = message["audio"]["id"]
+        
+        # Get the download URL
+        headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://graph.facebook.com/v21.0/{media_id}",
+                headers=headers
+            )
+            response.raise_for_status()
+            download_url = response.json()["url"]
 
-    async with httpx.AsyncClient() as client:
-        metadata_response = await client.get(media_metadata_url, headers=headers)
-        metadata_response.raise_for_status()
-        metadata = metadata_response.json()
-        download_url = metadata.get("url")
+        # Download the audio file
+        async with httpx.AsyncClient() as client:
+            audio_response = await client.get(download_url, headers=headers)
+            audio_response.raise_for_status()
 
-        audio_response = await client.get(download_url, headers=headers)
-        audio_response.raise_for_status()
+        # Prepare for transcription
+        audio_buffer = BytesIO(audio_response.content)
+        audio_buffer.seek(0)
+        audio_data = audio_buffer.read()
 
-    # Prepare for transcription
-    audio_buffer = BytesIO(audio_response.content)
-    audio_buffer.seek(0)
-    audio_data = audio_buffer.read()
+        return await get_speech_to_text().transcribe(audio_data)
 
-    return await speech_to_text.transcribe(audio_data)
+    except Exception as e:
+        logger.error(f"Error processing audio message: {e}")
+        raise
 
 async def send_response(
     from_number: str,
