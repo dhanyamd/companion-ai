@@ -126,7 +126,7 @@ class TextToImage:
                 api_key=settings.GROQ_API_KEY,
                 temperature=0.25,
                 max_retries=2,
-            )
+            ) 
 
             structured_llm = llm.with_structured_output(EnhancedPrompt)
 
