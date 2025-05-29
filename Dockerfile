@@ -35,5 +35,15 @@ VOLUME ["/app/data"]
 # Expose the port
 EXPOSE 8080
 
-# Run the FastAPI app using uvicorn with debug logging
-CMD ["python", "-m", "uvicorn", "ai_companion.interfaces.whatsapp.webhook_endpoint:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1", "--log-level", "debug"]
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+echo "Starting FastAPI application..."\n\
+echo "Current directory: $(pwd)"\n\
+echo "Python path: $PYTHONPATH"\n\
+echo "Available modules:"\n\
+python -c "import sys; print(\"\\n\".join(sys.path))"\n\
+python -m uvicorn ai_companion.interfaces.whatsapp.webhook_endpoint:app --host 0.0.0.0 --port 8080 --workers 1 --log-level debug\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Run the startup script
+CMD ["/app/start.sh"]
