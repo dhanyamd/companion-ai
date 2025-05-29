@@ -31,4 +31,4 @@ The following environment variables are required:
 - `TOGETHER_API_KEY`: API key for Together AI
 - `WHATSAPP_TOKEN`: WhatsApp API token
 - `WHATSAPP_PHONE_NUMBER_ID`: WhatsApp phone number ID
-- `WHATSAPP_VERIFY_TOKEN`: WhatsApp webhook verification token 
+- `WHATSAPP_VERIFY_TOKEN`: WhatsApp webhook verification token

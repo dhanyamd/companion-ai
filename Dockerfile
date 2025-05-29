@@ -35,5 +35,5 @@ VOLUME ["/app/data"]
 # Expose the port
 EXPOSE 8080
 
-# Run the FastAPI app using uvicorn
-CMD ["uvicorn", "ai_companion.interfaces.whatsapp.webhook_endpoint:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+# Run the FastAPI app using uvicorn with debug logging
+CMD ["python", "-m", "uvicorn", "ai_companion.interfaces.whatsapp.webhook_endpoint:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1", "--log-level", "debug"]
