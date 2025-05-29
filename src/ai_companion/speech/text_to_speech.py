@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional
-from elevenlabs import generate, set_api_key, Voice, VoiceSettings
+from elevenlabs import Client, Voice, VoiceSettings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class TextToSpeech:
     def _initialize_client(self) -> None:
         """Initialize the ElevenLabs client."""
         try:
-            set_api_key(os.getenv("ELEVENLABS_API_KEY"))
+            self.client = Client(api_key=os.getenv("ELEVENLABS_API_KEY"))
         except Exception as e:
             raise TextToSpeechError(f"Failed to initialize ElevenLabs client: {str(e)}")
             
@@ -58,8 +58,8 @@ class TextToSpeech:
                 settings=voice_settings
             )
             
-            # Generate audio
-            audio = generate(
+            # Generate audio using the client
+            audio = self.client.generate(
                 text=text,
                 voice=voice,
                 model="eleven_multilingual_v2"
