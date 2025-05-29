@@ -136,7 +136,7 @@ def memory_injection_node(state: AICompanionState) -> AICompanionState:
             cleaned_memories = []
             for memory in memories:
                 # Clean the memory content
-                content = memory.content
+                content = memory if isinstance(memory, str) else memory.text
                 # Find and clean any URLs
                 urls = re.findall(url_pattern, content)
                 for url in urls:
@@ -144,13 +144,12 @@ def memory_injection_node(state: AICompanionState) -> AICompanionState:
                     content = content.replace(url, cleaned_url)
                 # Clean any remaining non-printable characters
                 content = ''.join(char for char in content if char.isprintable() and char not in '\r\n\t')
-                memory.content = content
-                cleaned_memories.append(memory)
+                cleaned_memories.append(content)
             memories = cleaned_memories
         
         # Update memory context
         memory_context = "\n".join([
-            f"Memory: {memory.content}"
+            f"Memory: {memory}"
             for memory in memories
         ]) if memories else ""
         
