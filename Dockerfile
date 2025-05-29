@@ -35,14 +35,16 @@ VOLUME ["/app/data"]
 # Expose the port
 EXPOSE 8080
 
-# Create a startup script
+# Create a startup script with debugging information
 RUN echo '#!/bin/bash\n\
 echo "Starting FastAPI application..."\n\
 echo "Current directory: $(pwd)"\n\
 echo "Python path: $PYTHONPATH"\n\
 echo "Available modules:"\n\
 python -c "import sys; print(\"\\n\".join(sys.path))"\n\
-python -m uvicorn ai_companion.interfaces.whatsapp.webhook_endpoint:app --host 0.0.0.0 --port 8080 --workers 1 --log-level debug\n\
+echo "Testing module import:"\n\
+python -c "from ai_companion.interfaces.whatsapp.webhook_endpoint import app; print(\"App imported successfully\")"\n\
+exec uvicorn ai_companion.interfaces.whatsapp.webhook_endpoint:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1 --log-level debug\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run the startup script

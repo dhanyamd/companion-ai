@@ -1,7 +1,8 @@
 import os
 import logging
 from typing import Optional
-from elevenlabs import Client, Voice, VoiceSettings
+from elevenlabs.client import Client
+from elevenlabs import Voice, VoiceSettings
 
 logger = logging.getLogger(__name__)
 
