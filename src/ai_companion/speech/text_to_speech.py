@@ -65,7 +65,15 @@ class TextToSpeech:
                 model="eleven_multilingual_v2"
             )
             
-            return audio
+            # Convert audio to bytes if it's not already
+            if isinstance(audio, str):
+                with open(audio, 'rb') as f:
+                    audio_bytes = f.read()
+                return audio_bytes
+            elif isinstance(audio, bytes):
+                return audio
+            else:
+                raise TextToSpeechError(f"Unexpected audio type: {type(audio)}")
             
         except Exception as e:
             logger.error(f"Text-to-speech synthesis failed: {str(e)}")
