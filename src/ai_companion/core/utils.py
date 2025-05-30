@@ -4,7 +4,7 @@ from urllib.parse import urlparse, urlunparse, quote, unquote
 def sanitize_string(input_string: str) -> str:
     """Remove non-printable characters from a string, including carriage returns and newlines."""
     if not isinstance(input_string, str):
-        return str(input_string)
+     return str(input_string)
     # First remove all non-printable characters including \r, \n, \t
     cleaned = ''.join(char for char in input_string if char.isprintable() and char not in '\r\n\t')
     # Then remove any remaining control characters

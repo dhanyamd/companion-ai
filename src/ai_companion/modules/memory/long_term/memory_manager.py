@@ -13,6 +13,7 @@ from settings import settings
 from langchain_core.messages import BaseMessage
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field 
+from ai_companion.graph.utils.helpers import get_chat_model
 
 class MemoryAnalysis(BaseModel): 
     """Result of ananlyzing a message for memory-worthy content."""
@@ -28,12 +29,7 @@ class MemoryManager:
     def __init__(self) -> None:
         self.vector_store = get_vector_store() 
         self.logger = logging.getLogger(__name__) 
-        self.llm = ChatGroq(
-            model=settings.SMALL_TEXT_MODEL_NAME,
-            api_key=settings.GROQ_API_KEY,
-            temperature=0.1,
-            max_retries=2,
-        ).with_structured_output(MemoryAnalysis)
+        self.llm = get_chat_model(temperature=0.1, max_retries=2).with_structured_output(MemoryAnalysis)
 
     async def _analyze_memory(self, message: str) -> MemoryAnalysis:
         """Analyze a message to determine importance and format if needed""" 

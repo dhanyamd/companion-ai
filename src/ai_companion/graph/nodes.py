@@ -9,10 +9,10 @@ from ai_companion.graph.utils.chains import (
     get_router_chain,
 )
 from ai_companion.graph.utils.helpers import (
-    get_chat_model,
     get_text_to_image_module,
     get_text_to_speech_module,
 )
+from ai_companion.graph.utils.model_utils import get_chat_model
 from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager
 from ai_companion.modules.schedules.context_generation import ScheduleContextGenerator
 from ai_companion.core.utils import clean_url
@@ -74,7 +74,7 @@ async def audio_node(state: AICompanionState, config: RunnableConfig):
       current_activity = ScheduleContextGenerator.get_current_activity() 
       memory_context = state.get("memory_context","")
 
-      chain = get_character_response_chain(state.get("summary", ""))
+      chain = get_character_response_chain(state.get("summary", ""), use_small_model=True)
       text_to_speech_module = get_text_to_speech_module()
 
       response = await chain.ainvoke(

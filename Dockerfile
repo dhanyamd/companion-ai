@@ -19,8 +19,11 @@ COPY uv.lock pyproject.toml README.md /app/
 # Install the application dependencies
 RUN uv sync --frozen --no-cache
 
-# Copy your application code into the container
-COPY src/ /app/
+# Copy your application code and necessary directories into the container
+COPY src/ /app/src/
+COPY models/ /app/models/
+COPY short_term_memory/ /app/short_term_memory/
+COPY long_term_memory/ /app/long_term_memory/
 
 # Set the virtual environment environment variables
 ENV VIRTUAL_ENV=/app/.venv \
@@ -35,17 +38,6 @@ VOLUME ["/app/data"]
 # Expose the port
 EXPOSE 8080
 
-# Create a startup script with debugging information
-RUN echo '#!/bin/bash\n\
-echo "Starting FastAPI application..."\n\
-echo "Current directory: $(pwd)"\n\
-echo "Python path: $PYTHONPATH"\n\
-echo "Available modules:"\n\
-python -c "import sys; print(\"\\n\".join(sys.path))"\n\
-echo "Testing module import:"\n\
-python -c "from ai_companion.interfaces.whatsapp.webhook_endpoint import app; print(\"App imported successfully\")"\n\
-exec uvicorn ai_companion.interfaces.whatsapp.webhook_endpoint:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1 --log-level debug\n\
-' > /app/start.sh && chmod +x /app/start.sh
-
-# Run the startup script
-CMD ["/app/start.sh"]
+# Command to run the application
+# Use exec form to allow graceful shutdown signals
+CMD ["/app/.venv/bin/uvicorn", "ai_companion.interfaces.whatsapp.webhook_endpoint:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1", "--log-level", "debug"]

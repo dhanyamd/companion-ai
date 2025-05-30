@@ -10,6 +10,7 @@ from langchain.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 from together import Together
+from ai_companion.graph.utils.model_utils import get_chat_model
 
 class ScenarioPrompt(BaseModel): 
     """Class for the scenario response""" 
@@ -94,12 +95,7 @@ class TextToImage:
             formatted_history = "\n".join([f"{msg.type.title()}: {msg.content}" for msg in chat_history[-5:]])
 
             self.logger.info("Creating scenario from chat history")
-            llm = ChatGroq(
-                model=settings.SMALL_TEXT_MODEL_NAME,
-                api_key=settings.GROQ_API_KEY,
-                temperature=0.4,
-                max_retries=2
-            )
+            llm = get_chat_model(temperature=0.4, max_retries=2)
             structured_llm = llm.with_structured_output(ScenarioPrompt)
             chain = (
                 PromptTemplate(
@@ -121,13 +117,8 @@ class TextToImage:
         try:
             self.logger.info(f"Enhancing prompt: '{prompt}'")
 
-            llm = ChatGroq(
-                model=settings.SMALL_TEXT_MODEL_NAME,
-                api_key=settings.GROQ_API_KEY,
-                temperature=0.25,
-                max_retries=2,
-            ) 
-
+            # Use the smaller model specifically for prompt enhancement
+            llm = get_chat_model(temperature=0.25, max_retries=2, model_name=settings.SMALL_TEXT_MODEL_NAME)
             structured_llm = llm.with_structured_output(EnhancedPrompt)
 
             chain = (
