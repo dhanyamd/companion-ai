@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     QDRANT_HOST: str | None = Field(default=None, description="Qdrant host (optional)")
 
     # Model Names
-    TEXT_MODEL_NAME: str = Field(default="gemma2-9b-it", description="Main text model")
-    SMALL_TEXT_MODEL_NAME: str = Field(default="gemma2-9b-it", description="Smaller text model")
+    TEXT_MODEL_NAME: str = Field(default="llama2-70b-4096", description="Main text model")
+    SMALL_TEXT_MODEL_NAME: str = Field(default="llama2-13b-4096", description="Smaller text model")
     STT_MODEL_NAME: str = Field(default="whisper-large-v3-turbo", description="Speech-to-text model")
     TTS_MODEL_NAME: str = Field(default="eleven_flash_v2_5", description="Text-to-speech model")
     TTI_MODEL_NAME: str = Field(default="black-forest-labs/FLUX.1-schnell-Free", description="Text-to-image model")

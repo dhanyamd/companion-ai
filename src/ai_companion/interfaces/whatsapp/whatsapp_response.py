@@ -11,8 +11,6 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from ai_companion.graph import graph_builder
 from ai_companion.modules.images import ImageToText
-from ai_companion.speech.speech_to_text import SpeechToText
-from ai_companion.speech.text_to_speech import TextToSpeech
 from ai_companion.core.utils import clean_url, sanitize_string, URLValidator
 from ai_companion.graph.state import AICompanionState
 from settings import settings
@@ -42,12 +40,14 @@ _image_to_text = None
 def get_speech_to_text():
     global _speech_to_text
     if _speech_to_text is None:
+        from ai_companion.speech.speech_to_text import SpeechToText
         _speech_to_text = SpeechToText()
     return _speech_to_text
 
 def get_text_to_speech():
     global _text_to_speech
     if _text_to_speech is None:
+        from ai_companion.speech.text_to_speech import TextToSpeech
         _text_to_speech = TextToSpeech()
     return _text_to_speech
 
