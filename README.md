@@ -1,4 +1,4 @@
-# AI Companion
+# Companion ai
 
 An advanced AI companion that can chat, generate images, and process audio through WhatsApp. This project leverages multiple AI services to create an interactive and intelligent conversational experience.
 
