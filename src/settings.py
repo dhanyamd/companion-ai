@@ -25,12 +25,11 @@ class Settings(BaseSettings):
     TOGETHER_API_KEY: str = Field(..., description="Together API key")
 
     # Qdrant Configuration
-    QDRANT_API_KEY: str = Field(
-        default="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.tuHnaYj0AK3vtgxil-dMaYp8Df-ZDi8nMUuLep_Fz7I",
+    QDRANT_API_KEY: str = Field(...,
         description="Qdrant API key"
     )
     QDRANT_URL: str = Field(
-        default="https://6905f4b7-7d13-42c5-ab18-b4b99584e067.eu-central-1-0.aws.cloud.qdrant.io",
+        ...,
         description="Qdrant cloud URL"
     )
     QDRANT_PORT: str = Field(default="6333", description="Qdrant port")
