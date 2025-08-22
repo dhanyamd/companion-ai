@@ -2,6 +2,9 @@
 
 An advanced AI companion that can chat, generate images, and process audio through WhatsApp. This project leverages multiple AI services to create an interactive and intelligent conversational experience.
 
+<img width="738" height="1600" alt="image" src="https://github.com/user-attachments/assets/aa8b38cf-d8bc-4859-9361-9d553996c1ed" />
+
+
 ## 🌟 Features
 
 - **WhatsApp Integration**: Seamless communication through WhatsApp
